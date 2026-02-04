@@ -1,0 +1,7 @@
+{
+  "name": "Freshmart",
+  "description": "A full-featured digital grocery application for Nepal with AI recipe suggestions.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
