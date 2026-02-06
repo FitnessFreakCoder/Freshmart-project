@@ -5,71 +5,150 @@
 
 const API_BASE = 'http://localhost:5000/api';
 
+// In-memory access token (set by AuthContext)
+let memoryAccessToken: string | null = null;
+
+export const setApiAccessToken = (token: string | null) => {
+    memoryAccessToken = token;
+};
+
 // Helper to get auth headers
 const getAuthHeaders = (): Record<string, string> => {
-    const user = localStorage.getItem('freshmart_user');
-    if (user) {
-        try {
-            const parsed = JSON.parse(user);
-            if (parsed.token) {
-                return { 'Authorization': `Bearer ${parsed.token}` };
-            }
-        } catch (e) {
-            // Invalid JSON, ignore
-        }
+    if (memoryAccessToken) {
+        return { 'Authorization': `Bearer ${memoryAccessToken}` };
     }
     return {};
 };
 
-// Helper for API requests with timeout
+// In-memory CSRF token
+let csrfToken: string | null = null;
+
+// Helper to get CSRF token
+const getCsrfToken = async () => {
+    if (csrfToken) return csrfToken;
+    try {
+        const res = await fetch(`${API_BASE}/csrf-token`, { credentials: 'include' });
+        const data = await res.json();
+        csrfToken = data.csrfToken;
+        return csrfToken;
+    } catch (err) {
+        console.error('Failed to fetch CSRF token', err);
+        return null;
+    }
+};
+
+// Helper for API requests with timeout and auto-refresh
 const apiRequest = async (
     endpoint: string,
     options: RequestInit = {}
 ): Promise<any> => {
     const url = `${API_BASE}${endpoint}`;
-    console.log('[FreshMart API] Request:', options.method || 'GET', url);
 
+    // 0. Ensure CSRF Token for state-changing requests
+    // SKIP for auth routes (Login/Register don't need CSRF)
+    const isAuthRoute = endpoint.includes('/auth/');
+    if (!isAuthRoute && options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+        if (!csrfToken) {
+            await getCsrfToken();
+        }
+    }
+
+    // 1. Prepare headers
     const headers: Record<string, string> = {
         ...getAuthHeaders(),
         ...(options.headers as Record<string, string> || {})
     };
 
-    // Only add Content-Type for non-FormData requests
+    if (csrfToken) {
+        headers['x-csrf-token'] = csrfToken;
+    }
+
     if (!(options.body instanceof FormData)) {
         headers['Content-Type'] = 'application/json';
     }
 
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    // 2. Perform Request
+    const performRequest = async (token?: string) => {
+        const currentHeaders = { ...headers };
+        if (token) currentHeaders['Authorization'] = `Bearer ${token}`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+        try {
+            const response = await fetch(url, {
+                ...options,
+                headers: currentHeaders,
+                credentials: 'include', // <--- IMPORTANT: Send cookies (CSRF & Refresh Token)
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            return response;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
+    };
 
     try {
-        const response = await fetch(url, {
-            ...options,
-            headers,
-            signal: controller.signal
-        });
+        let response = await performRequest();
 
-        clearTimeout(timeoutId);
+        // 3. Handle 403 (CSRF Error) -> Retry once
+        if (response.status === 403) {
+            const data = await response.clone().json().catch(() => ({}));
+            if (data.code === 'CSRF_ERROR') {
+                console.log('[FreshMart API] CSRF Error, refreshing token...');
+                csrfToken = null; // Clear invalid token
+                await getCsrfToken(); // Fetch new one
+                if (csrfToken) headers['x-csrf-token'] = csrfToken;
+                response = await performRequest(); // Retry
+            }
+        }
+
+        // 4. Handle 401 (Unauthorized) -> Try Refresh
+        if (response.status === 401) {
+            console.log('[FreshMart API] 401 detected, attempting refresh...');
+            try {
+                // Attempt refresh via HTTP-only cookie
+                const refreshRes = await fetch(`${API_BASE}/refresh-token`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                if (refreshRes.ok) {
+                    const data = await refreshRes.json();
+                    if (data.accessToken) {
+                        console.log('[FreshMart API] Refresh successful, retrying request...');
+                        // Update memory token
+                        setApiAccessToken(data.accessToken);
+                        // Retry original request with new token
+                        response = await performRequest(data.accessToken);
+                    }
+                } else {
+                    console.log('[FreshMart API] Refresh failed');
+                }
+            } catch (err) {
+                console.error('[FreshMart API] Error during auto-refresh:', err);
+            }
+        }
+
         console.log('[FreshMart API] Response status:', response.status);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ message: 'Request failed' }));
-            console.error('[FreshMart API] Error response:', errorData);
             throw new Error(errorData.message || errorData.error || 'Request failed');
         }
 
         const data = await response.json();
-        console.log('[FreshMart API] Response data received');
         return data;
+
     } catch (error: any) {
-        clearTimeout(timeoutId);
         console.error('[FreshMart API] Request error:', error.message);
         if (error.name === 'AbortError') {
-            throw new Error('Request timed out. Please check if the server is running on port 5000.');
+            throw new Error('Request timed out.');
         }
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-            throw new Error('Cannot connect to server. Make sure the backend is running: node server.cjs');
+        if (error.message?.includes('Failed to fetch')) {
+            throw new Error('Cannot connect to server.');
         }
         throw error;
     }
@@ -159,9 +238,9 @@ export const api = {
     // ORDER ENDPOINTS
     // =====================
 
-    getOrders: async (userId?: number) => {
-        // Backend filters by user role automatically
-        return apiRequest('/orders');
+    getOrders: async (userId?: number | string) => {
+        const query = userId ? `?userId=${userId}` : '';
+        return apiRequest(`/orders${query}`);
     },
 
     placeOrder: async (order: any) => {

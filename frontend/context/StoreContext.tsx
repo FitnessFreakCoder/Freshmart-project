@@ -44,19 +44,19 @@ const reducer = (state: AppState, action: Action): AppState => {
     case 'SET_USER':
       // If payload is null (Logout), clear user-specific data like cart and orders
       if (action.payload === null) {
-        return { 
-          ...state, 
-          user: null, 
-          cart: [], 
-          orders: [], 
-          currentOrder: null 
+        return {
+          ...state,
+          user: null,
+          cart: [],
+          orders: [],
+          currentOrder: null
         };
       }
       return { ...state, user: action.payload };
     case 'UPDATE_USER_MOBILE':
-      return { 
-          ...state, 
-          user: state.user ? { ...state.user, mobileNumber: action.payload } : null 
+      return {
+        ...state,
+        user: state.user ? { ...state.user, mobileNumber: action.payload } : null
       };
     case 'SET_PRODUCTS':
       return { ...state, products: action.payload };
@@ -104,15 +104,23 @@ const reducer = (state: AppState, action: Action): AppState => {
   }
 };
 
+import { useAuth } from './AuthContext';
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // Initial Load
+  // Sync user from AuthContext
+  useEffect(() => {
+    dispatch({ type: 'SET_USER', payload: user });
+  }, [user]);
+
+  // Initial Load - fetch products and coupons only
   useEffect(() => {
     const init = async () => {
       const prods = await mockApi.getProducts();
       dispatch({ type: 'SET_PRODUCTS', payload: prods });
-      
+
       const coupons = await mockApi.getCoupons();
       dispatch({ type: 'SET_COUPONS', payload: coupons });
     };

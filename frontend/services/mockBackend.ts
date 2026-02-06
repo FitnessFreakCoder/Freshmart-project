@@ -119,7 +119,7 @@ export const mockApi = {
     await api.deleteProduct(id);
   },
 
-  getOrders: async (userId?: number): Promise<Order[]> => {
+  getOrders: async (userId?: number | string): Promise<Order[]> => {
     const orders = await api.getOrders(userId);
     return orders.map((o: any) => ({
       ...o,
@@ -132,6 +132,7 @@ export const mockApi = {
       items: order.items,
       total: order.total,
       discount: order.discount,
+      couponCodes: order.couponCodes, // Pass applied coupon codes
       deliveryCharge: order.deliveryCharge,
       finalTotal: order.finalTotal,
       location: order.location,

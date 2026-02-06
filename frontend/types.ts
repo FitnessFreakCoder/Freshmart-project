@@ -39,6 +39,9 @@ export interface Coupon {
   discountAmount: number; // Flat discount for simplicity
   expiry: string;
   minOrderAmount?: number; // Minimum cart value required
+  type?: 'REGULAR' | 'FIRST_ORDER';
+  targetUsername?: string; // If set, coupon is only for this user
+  giftMessage?: string; // Message like "Special gift from owner"
 }
 
 export interface LocationData {
@@ -66,6 +69,7 @@ export interface Order {
   finalTotal: number;
   status: OrderStatus;
   location: LocationData;
+  couponCodes?: string[]; // Track applied coupons
   createdAt: string;
 }
 

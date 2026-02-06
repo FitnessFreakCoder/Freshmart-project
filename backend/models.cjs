@@ -34,7 +34,11 @@ const couponSchema = new mongoose.Schema({
   discountAmount: { type: Number, required: true },
   minOrderAmount: { type: Number, default: 0 },
   expiryDate: { type: Date, required: true },
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+  type: { type: String, enum: ['REGULAR', 'FIRST_ORDER', 'SPECIAL_GIFT'], default: 'REGULAR' },
+  targetUsername: { type: String, default: null }, // If set, coupon is only for this user
+  giftMessage: { type: String, default: null }, // Special message for gift coupons
+  usedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }] // Track users who have redeemed this coupon
 });
 
 // 4. ORDER SCHEMA
