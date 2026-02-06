@@ -21,6 +21,7 @@ const validate = (schemaObj) => (req, res, next) => {
         next();
     } catch (err) {
         if (err instanceof z.ZodError) {
+            console.log('❌ Validation Error:', err.errors);
             return res.status(400).json({
                 message: 'Validation Error',
                 errors: err.errors.map(e => ({
@@ -35,7 +36,7 @@ const validate = (schemaObj) => (req, res, next) => {
 
 // --- SCHEMAS ---
 
-// 1. PRODUCT SCHEMA
+// 1. PRODUCT SCHEMA - More lenient for FormData with multer
 const productSchema = z.object({
     name: z.string().min(1),
     price: z.string().or(z.number()).transform(v => Number(v)),
@@ -44,18 +45,21 @@ const productSchema = z.object({
     stock: z.string().or(z.number()).transform(v => Number(v)),
     category: z.string().optional(),
     imageUrl: z.string().optional(),
-    bulkRule: z.string().optional().transform(v => v ? JSON.parse(v) : undefined).or(
+    bulkRule: z.string().optional().nullable().transform(v => {
+        if (!v || v === 'null' || v === 'undefined') return null;
+        try {
+            const parsed = JSON.parse(v);
+            return parsed;
+        } catch {
+            return null;
+        }
+    }).or(
         z.object({
             qty: z.number(),
             price: z.number()
         }).optional().nullable()
     )
-}); // Note: strict() removed here because multer adds fields, wait, multer runs before validation? 
-// Actually, for multipart/form-data, req.body might come after multer processing.
-// However, req.body usually contains other fields.
-// Since we are validating *after* multer (to get the file), we should be careful.
-// Multer puts fields in req.body.
-// We can use strict() but we need to ensure all fields are defined.
+}).passthrough(); // Allow extra fields from multer
 
 // 2. ORDER SCHEMA
 const orderSchema = z.object({
