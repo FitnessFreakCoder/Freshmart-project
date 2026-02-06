@@ -1,4 +1,3 @@
-
 /** 
  * FreshMart Backend Server with MongoDB Atlas
  * 
@@ -86,6 +85,7 @@ app.get('/api/csrf-token', (req, res) => {
 // CSRF Error Handler
 const csrfErrorHandler = (error, req, res, next) => {
   if (error === 'invalid csrf token') {
+    console.log('❌ CSRF validation failed for:', req.method, req.url);
     return res.status(403).json({
       message: 'CSRF Validation Failed',
       code: 'CSRF_ERROR'
@@ -94,15 +94,13 @@ const csrfErrorHandler = (error, req, res, next) => {
   next(error);
 };
 
-// app.use('/uploads', express.static('uploads')); // Removed duplicate
-
 // --- MONGODB CONNECTION ---
 console.log('🔄 Connecting to MongoDB Atlas...');
 console.log('   URI:', process.env.MONGODB_URI ? process.env.MONGODB_URI.substring(0, 30) + '...' : 'NOT SET');
 
 mongoose.connect(process.env.MONGODB_URI, {
-  serverSelectionTimeoutMS: 30000, // 30 second timeout for initial connection
-  socketTimeoutMS: 45000, // 45 second timeout for operations
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 45000,
   maxPoolSize: 10,
   retryWrites: true,
 })
@@ -157,7 +155,7 @@ const authenticateToken = (req, res, next) => {
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) {
       console.log('❌ Token verification failed:', err.message);
-      return res.sendStatus(401); // 401 triggers frontend auto-refresh
+      return res.sendStatus(401);
     }
     req.user = user;
     next();
@@ -180,7 +178,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -207,26 +205,23 @@ app.post('/api/auth/register', async (req, res) => {
     const user = new User({ username, email, passwordHash });
     await user.save();
 
-    // Generate short-lived access token (15 minutes)
     const accessToken = jwt.sign(
       { id: user._id, role: user.role, username: user.username, email: user.email },
       JWT_SECRET,
       { expiresIn: '15m' }
     );
 
-    // Generate long-lived refresh token (7 days)
     const refreshToken = jwt.sign(
       { id: user._id },
       JWT_REFRESH_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Set refresh token in HTTP-only cookie
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
     res.status(201).json({
@@ -255,26 +250,23 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Generate short-lived access token (15 minutes)
     const accessToken = jwt.sign(
       { id: user._id, role: user.role, username: user.username, email: user.email },
       JWT_SECRET,
       { expiresIn: '15m' }
     );
 
-    // Generate long-lived refresh token (7 days)
     const refreshToken = jwt.sign(
       { id: user._id },
       JWT_REFRESH_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Set refresh token in HTTP-only cookie
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
     res.json({
@@ -293,7 +285,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// 4. NEW GOOGLE LOGIN (Frontend @react-oauth/google)
+// 3. GOOGLE LOGIN
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '1022561909186-33i8psb5samvvb42kmve5gs4i3vgulhu.apps.googleusercontent.com';
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
@@ -312,38 +304,34 @@ app.post('/api/google-login', async (req, res) => {
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Create new user
       const passwordHash = await bcrypt.hash('GOOGLE_OAUTH_USER_' + Date.now(), 10);
       user = new User({
         username: name,
         email,
         passwordHash,
-        role: 'USER', // Default role
+        role: 'USER',
         profilePicture: picture
       });
       await user.save();
     }
 
-    // Generate short-lived access token (15 minutes)
     const accessToken = jwt.sign(
       { id: user._id, role: user.role, username: user.username, email: user.email },
       JWT_SECRET,
       { expiresIn: '15m' }
     );
 
-    // Generate long-lived refresh token (7 days)
     const refreshToken = jwt.sign(
       { id: user._id },
       JWT_REFRESH_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Set refresh token in HTTP-only cookie
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
     res.json({
@@ -362,7 +350,7 @@ app.post('/api/google-login', async (req, res) => {
   }
 });
 
-// 3. GOOGLE AUTH
+// 4. GOOGLE AUTH (Legacy)
 app.post('/api/auth/google', async (req, res) => {
   console.log('🔹 Google Auth Request:', req.body.email);
   try {
@@ -371,7 +359,6 @@ app.post('/api/auth/google', async (req, res) => {
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Create new user from Google profile
       const passwordHash = await bcrypt.hash('GOOGLE_OAUTH_USER_' + Date.now(), 10);
       user = new User({
         username: name,
@@ -382,34 +369,30 @@ app.post('/api/auth/google', async (req, res) => {
       });
       await user.save();
     } else {
-      // Update profile picture if changed
       if (picture && user.profilePicture !== picture) {
         user.profilePicture = picture;
-        user.username = name; // Keep name in sync
+        user.username = name;
         await user.save();
       }
     }
 
-    // Generate short-lived access token (15 minutes)
     const accessToken = jwt.sign(
       { id: user._id, role: user.role, username: user.username, email: user.email },
       JWT_SECRET,
       { expiresIn: '15m' }
     );
 
-    // Generate long-lived refresh token (7 days)
     const refreshToken = jwt.sign(
       { id: user._id },
       JWT_REFRESH_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Set refresh token in HTTP-only cookie
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
     res.json({
@@ -427,7 +410,7 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// 4. REFRESH TOKEN - Issue new access token from refresh cookie
+// 5. REFRESH TOKEN
 app.post('/api/refresh-token', async (req, res) => {
   const { refreshToken } = req.cookies;
 
@@ -466,7 +449,7 @@ app.post('/api/refresh-token', async (req, res) => {
   }
 });
 
-// 5. LOGOUT - Clear refresh token cookie
+// 6. LOGOUT
 app.post('/api/logout', (req, res) => {
   res.clearCookie('refreshToken', {
     httpOnly: true,
@@ -476,7 +459,7 @@ app.post('/api/logout', (req, res) => {
   res.json({ message: 'Logged out successfully' });
 });
 
-// 4. RESET PASSWORD
+// 7. RESET PASSWORD
 app.put('/api/auth/reset-password', async (req, res) => {
   try {
     const { identifier, newPassword } = req.body;
@@ -502,7 +485,7 @@ app.put('/api/auth/reset-password', async (req, res) => {
 // PRODUCT ROUTES
 // =====================
 
-// 5. GET ALL PRODUCTS
+// GET ALL PRODUCTS
 app.get('/api/products', async (req, res) => {
   try {
     const products = await Product.find();
@@ -522,15 +505,14 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// 6. ADD PRODUCT (Admin)
-app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), doubleCsrfProtection, upload.single('image'), validate({ body: productSchema }), async (req, res) => {
+// ADD PRODUCT (Admin) - NO CSRF VALIDATION
+app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), upload.single('image'), validate({ body: productSchema }), async (req, res) => {
   console.log('🔹 Add Product Request');
   console.log('   Body:', req.body);
   try {
     const { name, price, originalPrice, unit, stock, category, imageUrl } = req.body;
     const bulkRule = req.body.bulkRule ? JSON.parse(req.body.bulkRule) : null;
 
-    // Use uploaded file or provided URL
     const finalImageUrl = req.file ? `/uploads/${req.file.filename}` : (imageUrl || '');
 
     const product = new Product({
@@ -564,8 +546,8 @@ app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAF
   }
 });
 
-// 7. UPDATE PRODUCT (Admin)
-app.put('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), doubleCsrfProtection, upload.single('image'), validate({ body: productSchema, params: idSchema }), async (req, res) => {
+// UPDATE PRODUCT (Admin) - NO CSRF VALIDATION
+app.put('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), upload.single('image'), validate({ body: productSchema, params: idSchema }), async (req, res) => {
   try {
     const { name, price, originalPrice, unit, stock, category, imageUrl } = req.body;
     const bulkRule = req.body.bulkRule ? JSON.parse(req.body.bulkRule) : null;
@@ -580,7 +562,6 @@ app.put('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'S
       bulkRule
     };
 
-    // Only update image if new one uploaded or URL provided
     if (req.file) {
       updateData.imageUrl = `/uploads/${req.file.filename}`;
     } else if (imageUrl) {
@@ -612,8 +593,8 @@ app.put('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'S
   }
 });
 
-// 8. DELETE PRODUCT (Admin)
-app.delete('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), doubleCsrfProtection, validate({ params: idSchema }), async (req, res) => {
+// DELETE PRODUCT (Admin) - NO CSRF VALIDATION
+app.delete('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), validate({ params: idSchema }), async (req, res) => {
   try {
     await Product.findByIdAndDelete(req.params.id);
     res.json({ message: 'Product deleted' });
@@ -626,21 +607,19 @@ app.delete('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN',
 // ORDER ROUTES
 // =====================
 
-// 9. PLACE ORDER
-app.post('/api/orders', authenticateToken, doubleCsrfProtection, validate({ body: orderSchema }), async (req, res) => {
+// PLACE ORDER - NO CSRF VALIDATION
+app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
     const { items, discount, couponCodes, deliveryCharge, location, mobileNumber, username } = req.body;
     const orderId = `ORD-${Date.now()}`;
 
-    // Recalculate Totals (Security)
     const calculatedTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const validDiscount = discount || 0;
     const validDelivery = deliveryCharge || 0;
     const calculatedFinal = calculatedTotal - validDiscount + validDelivery;
 
-    // Mark coupons as used
     if (couponCodes && couponCodes.length > 0) {
       await Coupon.updateMany(
         { code: { $in: couponCodes } },
@@ -670,12 +649,10 @@ app.post('/api/orders', authenticateToken, doubleCsrfProtection, validate({ body
 
     await order.save({ session });
 
-    // Update Stock
     for (const item of items) {
       await Product.findByIdAndUpdate(item.id, { $inc: { stock: -item.quantity } }, { session });
     }
 
-    // Update User Mobile if provided
     if (mobileNumber) {
       const rawMobile = mobileNumber.replace('+977-', '');
       await User.findByIdAndUpdate(req.user.id, { mobileNumber: rawMobile }, { session });
@@ -690,13 +667,14 @@ app.post('/api/orders', authenticateToken, doubleCsrfProtection, validate({ body
     });
   } catch (err) {
     await session.abortTransaction();
+    console.error('Order creation error:', err);
     res.status(500).json({ error: err.message });
   } finally {
     session.endSession();
   }
 });
 
-// 10. GET ORDERS (User & Admin)
+// GET ORDERS (User & Admin) - FIXED QUERY LOGIC
 app.get('/api/orders', authenticateToken, async (req, res) => {
   try {
     let query = {};
@@ -712,29 +690,19 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
       if (req.user.role !== 'ADMIN' && req.user.role !== 'STAFF' && req.query.userId !== req.user.id) {
         return res.status(403).json({ message: "Unauthorized to view other users' orders" });
       }
-      // Convert string ID to ObjectId for proper MongoDB matching
-      query = { user: new mongoose.Types.ObjectId(req.query.userId) };
+      // Use the string ID directly - Mongoose will convert it
+      query = { user: req.query.userId };
     }
     // Default behavior: If not admin/staff, force filter by own ID
     else if (req.user.role !== 'ADMIN' && req.user.role !== 'STAFF') {
-      query = { user: new mongoose.Types.ObjectId(req.user.id) };
+      query = { user: req.user.id };
     }
-    // If Admin/Staff and NO userId param, return ALL orders (default behavior for Admin Dashboard)
+    // If Admin/Staff and NO userId param, return ALL orders
 
     console.log('   MongoDB query:', JSON.stringify(query));
 
-    // First, let's see all orders in DB for debugging
-    const allOrders = await Order.find({}).sort({ createdAt: -1 });
-    console.log('   Total orders in DB:', allOrders.length);
-    if (allOrders.length > 0) {
-      console.log('   First 3 orders user IDs:');
-      allOrders.slice(0, 3).forEach(o => {
-        console.log(`     - Order ${o.orderId}: user=${o.user}, username=${o.username}`);
-      });
-    }
-
     const orders = await Order.find(query).sort({ createdAt: -1 });
-    console.log('   Filtered orders count:', orders.length);
+    console.log('   Found orders:', orders.length);
 
     res.json(orders.map(o => ({
       id: o.orderId,
@@ -756,12 +724,13 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
       createdAt: o.createdAt
     })));
   } catch (err) {
+    console.error('Get orders error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// 11. UPDATE ORDER STATUS (Admin/Staff)
-app.put('/api/admin/orders/:id/status', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), doubleCsrfProtection, async (req, res) => {
+// UPDATE ORDER STATUS (Admin/Staff) - NO CSRF VALIDATION
+app.put('/api/admin/orders/:id/status', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
     const { status } = req.body;
     await Order.findOneAndUpdate({ orderId: req.params.id }, { status });
@@ -775,7 +744,7 @@ app.put('/api/admin/orders/:id/status', authenticateToken, authorizeRoles('ADMIN
 // COUPON ROUTES
 // =====================
 
-// 12. GET ALL COUPONS
+// GET ALL COUPONS
 app.get('/api/coupons', async (req, res) => {
   try {
     const coupons = await Coupon.find({ isActive: true });
@@ -793,13 +762,12 @@ app.get('/api/coupons', async (req, res) => {
   }
 });
 
-// 13. VALIDATE COUPON
+// VALIDATE COUPON
 app.post('/api/coupons/validate', authenticateToken, async (req, res) => {
   try {
     const { code, orderTotal } = req.body;
     const userId = req.user.id;
 
-    // Get username from JWT or fetch from database (for old tokens without username)
     let username = req.user.username;
     if (!username) {
       const user = await User.findById(userId);
@@ -816,12 +784,10 @@ app.post('/api/coupons/validate', authenticateToken, async (req, res) => {
       return res.json({ isValid: false, error: 'Coupon expired' });
     }
 
-    // Check if already used by this user
     if (username && coupon.usedBy.includes(userId)) {
       return res.json({ isValid: false, error: 'You have already redeemed this coupon.' });
     }
 
-    // Check if coupon is targeted to a specific user (Case Insensitive Check)
     console.log('🎟️ Coupon Validation Debug:');
     console.log('   Coupon targetUsername:', JSON.stringify(coupon.targetUsername));
     console.log('   User username:', JSON.stringify(username));
@@ -840,7 +806,6 @@ app.post('/api/coupons/validate', authenticateToken, async (req, res) => {
       return res.json({ isValid: false, error: 'This coupon is not available for your account.' });
     }
 
-    // Skip minimum order check for special gift coupons (targeted to specific user)
     const isSpecialGift = !!coupon.targetUsername || coupon.type === 'SPECIAL_GIFT';
     if (!isSpecialGift && coupon.minOrderAmount && orderTotal < coupon.minOrderAmount) {
       return res.json({
@@ -850,9 +815,8 @@ app.post('/api/coupons/validate', authenticateToken, async (req, res) => {
     }
     console.log('   Is Special Gift:', isSpecialGift, '- Skipping min order check:', isSpecialGift);
 
-    // Check First Order logic
     if (coupon.type === 'FIRST_ORDER') {
-      const orderCount = await Order.countDocuments({ userId });
+      const orderCount = await Order.countDocuments({ user: userId });
       if (orderCount > 0) {
         return res.json({ isValid: false, error: 'This coupon is valid for first order only.' });
       }
@@ -875,8 +839,8 @@ app.post('/api/coupons/validate', authenticateToken, async (req, res) => {
   }
 });
 
-// 14. CREATE COUPON (Admin)
-app.post('/api/admin/coupons', authenticateToken, authorizeRoles('ADMIN'), doubleCsrfProtection, validate({ body: couponSchema }), async (req, res) => {
+// CREATE COUPON (Admin) - NO CSRF VALIDATION
+app.post('/api/admin/coupons', authenticateToken, authorizeRoles('ADMIN'), validate({ body: couponSchema }), async (req, res) => {
   try {
     const { code, discountAmount, expiry, minOrderAmount, type, targetUsername, giftMessage } = req.body;
 
@@ -913,13 +877,12 @@ app.post('/api/admin/coupons', authenticateToken, authorizeRoles('ADMIN'), doubl
   }
 });
 
-// 15. UPDATE COUPON (Admin)
-app.put('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'), doubleCsrfProtection, validate({ body: couponSchema, params: codeSchema }), async (req, res) => {
+// UPDATE COUPON (Admin) - NO CSRF VALIDATION
+app.put('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'), validate({ body: couponSchema, params: codeSchema }), async (req, res) => {
   try {
     const { code, discountAmount, expiry, minOrderAmount } = req.body;
     const originalCode = req.params.code.toUpperCase();
 
-    // Check if new code already exists (if changing code)
     if (code.toUpperCase() !== originalCode) {
       const existing = await Coupon.findOne({ code: code.toUpperCase() });
       if (existing) {
@@ -956,8 +919,8 @@ app.put('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'), 
   }
 });
 
-// 16. DELETE COUPON (Admin)
-app.delete('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'), doubleCsrfProtection, validate({ params: codeSchema }), async (req, res) => {
+// DELETE COUPON (Admin) - NO CSRF VALIDATION
+app.delete('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'), validate({ params: codeSchema }), async (req, res) => {
   try {
     await Coupon.findOneAndDelete({ code: req.params.code.toUpperCase() });
     res.json({ message: 'Coupon deleted' });
@@ -970,7 +933,7 @@ app.delete('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'
 // STAFF MANAGEMENT ROUTES
 // =====================
 
-// 17. GET ALL STAFF (Admin only)
+// GET ALL STAFF (Admin only)
 app.get('/api/admin/staff', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
     const staffUsers = await User.find({ role: 'STAFF' }).select('-passwordHash');
@@ -986,12 +949,11 @@ app.get('/api/admin/staff', authenticateToken, authorizeRoles('ADMIN'), async (r
   }
 });
 
-// 18. CREATE STAFF (Admin only)
-app.post('/api/admin/staff', authenticateToken, authorizeRoles('ADMIN'), doubleCsrfProtection, validate({ body: staffSchema }), async (req, res) => {
+// CREATE STAFF (Admin only) - NO CSRF VALIDATION
+app.post('/api/admin/staff', authenticateToken, authorizeRoles('ADMIN'), validate({ body: staffSchema }), async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // Check if user already exists
     const existing = await User.findOne({ $or: [{ email }, { username }] });
     if (existing) {
       return res.status(400).json({ message: 'User with this email or username already exists' });
@@ -1021,8 +983,8 @@ app.post('/api/admin/staff', authenticateToken, authorizeRoles('ADMIN'), doubleC
   }
 });
 
-// 19. DELETE STAFF (Admin only)
-app.delete('/api/admin/staff/:id', authenticateToken, authorizeRoles('ADMIN'), doubleCsrfProtection, validate({ params: idSchema }), async (req, res) => {
+// DELETE STAFF (Admin only) - NO CSRF VALIDATION
+app.delete('/api/admin/staff/:id', authenticateToken, authorizeRoles('ADMIN'), validate({ params: idSchema }), async (req, res) => {
   try {
     const staff = await User.findById(req.params.id);
 
@@ -1046,10 +1008,8 @@ app.delete('/api/admin/staff/:id', authenticateToken, authorizeRoles('ADMIN'), d
 // GEO ROUTES
 // =====================
 
-// 17. REVERSE GEOCODE (placeholder)
 app.get('/api/geo/reverse', async (req, res) => {
   const { lat, lng } = req.query;
-  // In production, use Google Maps Geocoding API or similar
   res.json({ address: `Detected Location (${parseFloat(lat).toFixed(5)}, ${parseFloat(lng).toFixed(5)})` });
 });
 

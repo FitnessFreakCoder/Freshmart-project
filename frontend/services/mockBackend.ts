@@ -7,6 +7,7 @@
  * This allows all existing components to work without changes.
  */
 
+import { profile } from 'console';
 import { Product, User, UserRole, Order, Coupon, OrderStatus } from '../types';
 import { api } from './api';
 
@@ -27,7 +28,7 @@ export const mockApi = {
         username: response.user.username,
         email: response.user.email,
         role: response.user.role as UserRole,
-        token: response.token,
+        token: response.accessToken,
         mobileNumber: response.user.mobileNumber,
         profilePicture: response.user.profilePicture
       };
@@ -95,7 +96,8 @@ export const mockApi = {
       username: response.user.username,
       email: response.user.email,
       role: response.user.role as UserRole,
-      token: response.token
+      token: response.acessToken,
+      profilePicture: response.user.profilePicture
     };
 
     localStorage.setItem('freshmart_user', JSON.stringify(user));
@@ -203,7 +205,7 @@ function initGoogleAuth(
           username: authResponse.user.username,
           email: authResponse.user.email,
           role: authResponse.user.role as UserRole,
-          token: authResponse.token,
+          token: authResponse.accessToken,
           profilePicture: authResponse.user.profilePicture
         };
 
@@ -246,7 +248,7 @@ function initGoogleAuth(
               username: authResponse.user.username,
               email: authResponse.user.email,
               role: authResponse.user.role as UserRole,
-              token: authResponse.token,
+              token: authResponse.accessToken,
               profilePicture: authResponse.user.profilePicture
             };
 

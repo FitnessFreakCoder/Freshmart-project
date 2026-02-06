@@ -46,12 +46,8 @@ const apiRequest = async (
 
     // 0. Ensure CSRF Token for state-changing requests
     // SKIP for auth routes (Login/Register don't need CSRF)
-    const isAuthRoute = endpoint.includes('/auth/');
-    if (!isAuthRoute && options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
-        if (!csrfToken) {
-            await getCsrfToken();
-        }
-    }
+
+  
 
     // 1. Prepare headers
     const headers: Record<string, string> = {
@@ -59,9 +55,7 @@ const apiRequest = async (
         ...(options.headers as Record<string, string> || {})
     };
 
-    if (csrfToken) {
-        headers['x-csrf-token'] = csrfToken;
-    }
+   
 
     if (!(options.body instanceof FormData)) {
         headers['Content-Type'] = 'application/json';
@@ -93,17 +87,6 @@ const apiRequest = async (
     try {
         let response = await performRequest();
 
-        // 3. Handle 403 (CSRF Error) -> Retry once
-        if (response.status === 403) {
-            const data = await response.clone().json().catch(() => ({}));
-            if (data.code === 'CSRF_ERROR') {
-                console.log('[FreshMart API] CSRF Error, refreshing token...');
-                csrfToken = null; // Clear invalid token
-                await getCsrfToken(); // Fetch new one
-                if (csrfToken) headers['x-csrf-token'] = csrfToken;
-                response = await performRequest(); // Retry
-            }
-        }
 
         // 4. Handle 401 (Unauthorized) -> Try Refresh
         if (response.status === 401) {
