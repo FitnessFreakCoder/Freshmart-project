@@ -21,6 +21,8 @@ const helmet = require('helmet');
 const { doubleCsrf } = require('csrf-csrf');
 const http = require('http');
 const { Server } = require('socket.io');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const { User, Product, Coupon, Order } = require('./models.cjs');
 const {
@@ -34,7 +36,7 @@ const {
 } = require('./validation.cjs');
 
 // CORS Origins - configurable via environment variable
-const CORS_ORIGINS = process.env.CORS_ORIGINS 
+const CORS_ORIGINS = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
   : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'];
 
@@ -217,24 +219,22 @@ const authorizeRoles = (...allowedRoles) => {
   };
 };
 
-// --- IMAGE UPLOAD ---
-const storage = multer.diskStorage({
-  destination: './uploads/',
-  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+// --- IMAGE UPLOAD (Cloudinary) ---
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    if (extname && mimetype) {
-      return cb(null, true);
-    }
-    cb(new Error('Only image files (jpeg, jpg, png, gif, webp) are allowed!'));
-  }
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'freshmart_products',
+    allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+  },
 });
+
+const upload = multer({ storage: storage });
 
 // =====================
 // AUTH ROUTES
@@ -557,7 +557,7 @@ app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAF
     const { name, price, originalPrice, unit, stock, category, imageUrl } = req.body;
     const bulkRule = req.body.bulkRule;
 
-    const finalImageUrl = req.file ? `/uploads/${req.file.filename}` : (imageUrl || '');
+    const finalImageUrl = req.file ? req.file.path : (imageUrl || '');
 
     const product = new Product({
       name,
@@ -607,7 +607,7 @@ app.put('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'S
     };
 
     if (req.file) {
-      updateData.imageUrl = `/uploads/${req.file.filename}`;
+      updateData.imageUrl = req.file.path;
     } else if (imageUrl) {
       updateData.imageUrl = imageUrl;
     }
@@ -686,12 +686,12 @@ const supportsTransactions = async () => {
 app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), async (req, res) => {
   const useTransaction = await supportsTransactions();
   let session = null;
-  
+
   if (useTransaction) {
     session = await mongoose.startSession();
     session.startTransaction();
   }
-  
+
   try {
     const { items, discount, couponCodes, deliveryCharge, location, mobileNumber, username } = req.body;
     const orderId = `ORD-${Date.now()}`;
