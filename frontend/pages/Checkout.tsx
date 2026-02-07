@@ -18,6 +18,7 @@ const Checkout: React.FC = () => {
   const [address, setAddress] = useState('');
   const [isEditingAddress, setIsEditingAddress] = useState(false);
   const [coords, setCoords] = useState<{ lat: number, lng: number } | null>(null);
+  const [manualAddressMode, setManualAddressMode] = useState(false);
 
   // Mobile Number State
   const [mobile, setMobile] = useState('');
@@ -183,16 +184,88 @@ const Checkout: React.FC = () => {
 
         {!coords && !address ? (
           <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-            <p className="text-sm text-gray-500 mb-4">We need your precise location for delivery.</p>
-            <button
-              onClick={handleGetLocation}
-              disabled={loadingGeo}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center gap-2 mx-auto"
-            >
-              {loadingGeo ? <Loader className="animate-spin" size={16} /> : <MapPin size={16} />}
-              {loadingGeo ? 'Locating...' : 'Get Precise Location'}
-            </button>
-            {geoError && <p className="text-red-500 text-xs mt-2">{geoError}</p>}
+            {!manualAddressMode ? (
+              <>
+                <p className="text-sm text-gray-500 mb-4">We need your location for delivery.</p>
+                <button
+                  onClick={handleGetLocation}
+                  disabled={loadingGeo}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center gap-2 mx-auto"
+                >
+                  {loadingGeo ? <Loader className="animate-spin" size={16} /> : <MapPin size={16} />}
+                  {loadingGeo ? 'Locating...' : 'Get Precise Location'}
+                </button>
+                {geoError && <p className="text-red-500 text-xs mt-2">{geoError}</p>}
+                
+                {/* Manual Entry Option */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <p className="text-xs text-gray-400 mb-2">Location access denied or not working?</p>
+                  <button
+                    onClick={() => {
+                      setManualAddressMode(true);
+                      setGeoError('');
+                    }}
+                    className="text-green-600 text-sm font-medium hover:underline flex items-center gap-1 mx-auto"
+                  >
+                    <Edit2 size={14} /> Enter Address Manually
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* Manual Address Entry Form */
+              <div className="text-left">
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-2">
+                  Enter Your Delivery Address <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="House/Flat number, Street, Area, City&#10;e.g., Flat 12, Sunrise Apartments, Baluwatar, Kathmandu"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  rows={3}
+                  autoFocus
+                />
+                <div className="flex gap-2 mt-3 justify-end">
+                  <button
+                    onClick={() => {
+                      setManualAddressMode(false);
+                      setAddress('');
+                    }}
+                    className="px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-100 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (address.trim().length >= 10) {
+                        setManualAddressMode(false);
+                      } else {
+                        setGeoError('Please enter a complete address (at least 10 characters).');
+                      }
+                    }}
+                    disabled={address.trim().length < 10}
+                    className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Save Address
+                  </button>
+                </div>
+                {geoError && <p className="text-red-500 text-xs mt-2">{geoError}</p>}
+                
+                {/* Option to try GPS again */}
+                <div className="mt-4 pt-3 border-t border-gray-200 text-center">
+                  <button
+                    onClick={() => {
+                      setManualAddressMode(false);
+                      setAddress('');
+                      setGeoError('');
+                    }}
+                    className="text-gray-500 text-xs hover:underline"
+                  >
+                    ← Try GPS Location Instead
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="bg-green-50 p-4 rounded-lg">
@@ -216,6 +289,11 @@ const Checkout: React.FC = () => {
                     GPS: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
                   </p>
                 )}
+                {!coords && (
+                  <p className="text-xs text-gray-500 mt-1 italic">
+                    Manual entry (no GPS)
+                  </p>
+                )}
               </div>
 
               <button
@@ -237,6 +315,21 @@ const Checkout: React.FC = () => {
                 </button>
               </div>
             )}
+            
+            {/* Option to change location method */}
+            <div className="mt-3 pt-3 border-t border-green-200">
+              <button
+                onClick={() => {
+                  setAddress('');
+                  setCoords(null);
+                  setManualAddressMode(false);
+                  setGeoError('');
+                }}
+                className="text-xs text-green-700 hover:underline"
+              >
+                Use a different address
+              </button>
+            </div>
           </div>
         )}
       </div>
