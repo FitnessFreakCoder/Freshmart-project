@@ -553,11 +553,13 @@ app.get('/api/products', async (req, res) => {
 app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), upload.single('image'), validate({ body: productSchema }), async (req, res) => {
   console.log('🔹 Add Product Request');
   console.log('   Body:', req.body);
+  console.log('   File:', req.file);
   try {
     const { name, price, originalPrice, unit, stock, category, imageUrl } = req.body;
     const bulkRule = req.body.bulkRule;
 
     const finalImageUrl = req.file ? req.file.path : (imageUrl || '');
+    console.log('   Final Image URL:', finalImageUrl);
 
     const product = new Product({
       name,
@@ -571,6 +573,7 @@ app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAF
     });
 
     await product.save();
+    console.log('✅ Product saved successfully:', product._id);
     res.json({
       message: 'Product added',
       product: {
@@ -586,6 +589,7 @@ app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAF
       }
     });
   } catch (err) {
+    console.error('❌ Error saving product:', err);
     res.status(500).json({ error: err.message });
   }
 });
