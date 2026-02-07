@@ -16,7 +16,9 @@ type Action =
   | { type: 'UPDATE_ORDER_STATUS'; payload: { id: string; status: string } }
   | { type: 'SET_COUPONS'; payload: Coupon[] }
   | { type: 'ADD_COUPON'; payload: Coupon }
-  | { type: 'REMOVE_COUPON'; payload: string };
+  | { type: 'ADD_COUPON'; payload: Coupon }
+  | { type: 'REMOVE_COUPON'; payload: string }
+  | { type: 'RECEIVE_NEW_ORDER'; payload: Order };
 
 const initialState: AppState = {
   user: null,
@@ -99,6 +101,10 @@ const reducer = (state: AppState, action: Action): AppState => {
       return { ...state, coupons: [...state.coupons, action.payload] };
     case 'REMOVE_COUPON':
       return { ...state, coupons: state.coupons.filter(c => c.code !== action.payload) };
+    case 'RECEIVE_NEW_ORDER':
+      // Prevent duplicate orders
+      if (state.orders.find(o => o.id === action.payload.id)) return state;
+      return { ...state, orders: [action.payload, ...state.orders] };
     default:
       return state;
   }

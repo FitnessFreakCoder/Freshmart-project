@@ -19,6 +19,8 @@ const path = require('path');
 require('dotenv').config();
 const helmet = require('helmet');
 const { doubleCsrf } = require('csrf-csrf');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const { User, Product, Coupon, Order } = require('./models.cjs');
 const {
@@ -32,6 +34,29 @@ const {
 } = require('./validation.cjs');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token']
+  }
+});
+
+// --- SOCKET.IO CONNECTION HANDLER ---
+io.on('connection', (socket) => {
+  console.log('🔌 New client connected:', socket.id);
+
+  socket.on('join_room', (room) => {
+    socket.join(room);
+    console.log(`Client ${socket.id} joined room: ${room}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
 
 // 1. CORS (Must be first to handle pre-flight requests)
 app.use(cors({
@@ -697,6 +722,30 @@ app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), asyn
 
     await session.commitTransaction();
 
+    // --- SOCKET.IO EMIT ---
+    io.to('admin_room').to('staff_room').emit('newOrderNotification', {
+      message: 'New order received!',
+      order: {
+        id: orderId, // Map to frontend expected format
+        userId: order.user,
+        username: username || req.user.username,
+        mobileNumber: mobileNumber,
+        items: items.map(i => ({
+          id: i.id,
+          name: i.name,
+          price: i.price,
+          quantity: i.quantity
+        })),
+        total: calculatedTotal,
+        discount: validDiscount,
+        deliveryCharge: validDelivery,
+        finalTotal: calculatedFinal,
+        status: 'Pending',
+        location: location,
+        createdAt: order.createdAt
+      }
+    });
+
     res.json({
       id: orderId,
       status: 'Pending',
@@ -770,7 +819,18 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
 app.put('/api/admin/orders/:id/status', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
     const { status } = req.body;
-    await Order.findOneAndUpdate({ orderId: req.params.id }, { status });
+    const order = await Order.findOneAndUpdate({ orderId: req.params.id }, { status }, { new: true });
+
+    // --- SOCKET.IO EMIT ---
+    if (order && order.user) {
+      io.to(`user_${order.user}`).emit('orderStatusUpdated', {
+        message: `Your order #${order.orderId} is now ${status}`,
+        orderId: order.orderId,
+        status: status,
+        updatedBy: req.user.id
+      });
+    }
+
     res.json({ message: 'Status updated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1054,6 +1114,6 @@ app.get('/api/geo/reverse', async (req, res) => {
 app.use(csrfErrorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

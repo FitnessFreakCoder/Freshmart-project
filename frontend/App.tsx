@@ -14,6 +14,8 @@ import { useStore } from './context/StoreContext';
 import { Receipt, ArrowLeft, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
 import { mockApi } from './services/mockBackend';
 import SpecialCouponPopup from './components/SpecialCouponPopup';
+import { SocketProvider } from './context/SocketContext';
+import ToastNotification from './components/ToastNotification';
 
 // Helper to format date labels
 const getDateLabel = (dateStr: string): string => {
@@ -255,26 +257,29 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <StoreProvider>
-        <SpecialCouponPopup />
-        <Router>
-          <div className="min-h-screen flex flex-col">
-            <Navbar />
-            <main className="flex-grow bg-gray-50">
-              <Routes>
-                <Route path="/" element={<Login />} />
-                <Route path="/home" element={<Home />} />
-                <Route path="/cart" element={<Cart />} />
-                <Route path="/checkout" element={<Checkout />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/admin" element={<Admin />} />
-                <Route path="/orders" element={<Orders />} />
-                <Route path="/backend-guide" element={<BackendGuide />} />
-                <Route path="*" element={<Navigate to="/" />} />
-              </Routes>
-            </main>
-            {/* Footer removed as requested */}
-          </div>
-        </Router>
+        <SocketProvider>
+          <ToastNotification />
+          <SpecialCouponPopup />
+          <Router>
+            <div className="min-h-screen flex flex-col">
+              <Navbar />
+              <main className="flex-grow bg-gray-50">
+                <Routes>
+                  <Route path="/" element={<Login />} />
+                  <Route path="/home" element={<Home />} />
+                  <Route path="/cart" element={<Cart />} />
+                  <Route path="/checkout" element={<Checkout />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/admin" element={<Admin />} />
+                  <Route path="/orders" element={<Orders />} />
+                  <Route path="/backend-guide" element={<BackendGuide />} />
+                  <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+              </main>
+              {/* Footer removed as requested */}
+            </div>
+          </Router>
+        </SocketProvider>
       </StoreProvider>
     </AuthProvider>
   );
