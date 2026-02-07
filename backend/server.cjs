@@ -1,10 +1,5 @@
-/** 
- * FreshMart Backend Server with MongoDB Atlas
- * 
- * INSTALLATION:
- * 1. npm install express mongoose cors dotenv bcrypt jsonwebtoken multer
- * 2. Create .env file with MONGODB_URI
- * 3. Run: node server.cjs
+/** * FreshMart Backend Server with MongoDB Atlas
+ * * UPDATED: Fixed Cross-Site Cookies (Render/Vercel) & Socket.io
  */
 
 const express = require('express');
@@ -35,9 +30,23 @@ const {
 
 const app = express();
 const server = http.createServer(app);
+
+// --- ENVIRONMENT CHECK ---
+// This is critical for your cookies to work on Render
+const isProduction = process.env.NODE_ENV === 'production';
+console.log(`🚀 Environment: ${isProduction ? 'PRODUCTION (Render)' : 'DEVELOPMENT (Local)'}`);
+
+// --- ALLOWED ORIGINS ---
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'https://freshmart-project.vercel.app' // Ensure this matches your Vercel URL exactly
+];
+
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'https://freshmart-project.vercel.app'],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token']
@@ -60,7 +69,7 @@ io.on('connection', (socket) => {
 
 // 1. CORS (Must be first to handle pre-flight requests)
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'https://freshmart-project.vercel.app'],
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token']
@@ -92,8 +101,10 @@ const {
   cookieName: 'x-csrf-token',
   cookieOptions: {
     httpOnly: true,
-    secure: true, // Required for SameSite: None 
-    sameSite: 'none', // Required for Cross-Site (Vercel -> Render)
+    // CRITICAL FIX: Must be true for sameSite: 'none'
+    secure: isProduction,
+    // CRITICAL FIX: Must be 'none' for Vercel -> Render communication
+    sameSite: isProduction ? 'none' : 'lax',
     path: '/'
   },
   size: 64,
@@ -126,8 +137,6 @@ const csrfErrorHandler = (error, req, res, next) => {
 
 // --- MONGODB CONNECTION ---
 console.log('🔄 Connecting to MongoDB Atlas...');
-console.log('   URI:', process.env.MONGODB_URI ? process.env.MONGODB_URI.substring(0, 30) + '...' : 'NOT SET');
-
 mongoose.connect(process.env.MONGODB_URI, {
   serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
@@ -137,14 +146,6 @@ mongoose.connect(process.env.MONGODB_URI, {
   .then(() => console.log('✅ Connected to MongoDB Atlas successfully!'))
   .catch(err => {
     console.error('❌ MongoDB Connection Error:', err.message);
-    console.error('');
-    console.error('🔧 TROUBLESHOOTING:');
-    console.error('   1. Check your MONGODB_URI in .env file');
-    console.error('   2. Whitelist your IP in MongoDB Atlas:');
-    console.error('      → Go to MongoDB Atlas → Network Access → Add IP Address');
-    console.error('      → Add your current IP or use 0.0.0.0/0 for testing');
-    console.error('   3. Check your database user password is correct');
-    console.error('');
   });
 
 // --- SEED DEFAULT ADMIN ---
@@ -169,7 +170,6 @@ const seedAdmin = async () => {
   }
 };
 
-// Run after connection
 mongoose.connection.once('open', seedAdmin);
 
 // --- MIDDLEWARE ---
@@ -178,7 +178,7 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    console.log(`[Auth] No token. URL: ${req.url}`);
+    // console.log(`[Auth] No token. URL: ${req.url}`);
     return res.sendStatus(401);
   }
 
@@ -221,7 +221,7 @@ const upload = multer({
 });
 
 // =====================
-// AUTH ROUTES
+// AUTH ROUTES (FIXED COOKIES)
 // =====================
 
 // 1. REGISTER
@@ -247,10 +247,11 @@ app.post('/api/auth/register', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // FIX: Secure Cross-Site Cookie
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction, // TRUE on Render
+      sameSite: isProduction ? 'none' : 'lax', // NONE on Render
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
@@ -292,10 +293,11 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // FIX: Secure Cross-Site Cookie
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
@@ -322,28 +324,17 @@ const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 app.post('/api/google-login', async (req, res) => {
   const { token } = req.body;
 
-  console.log('🔹 Google Login Request received');
-  console.log('   Token (first 20 chars):', token.substring(0, 20) + '...');
-
   try {
     const ticket = await client.verifyIdToken({
       idToken: token,
       audience: GOOGLE_CLIENT_ID,
     });
     const payload = ticket.getPayload();
-
-    console.log('✅ Google Token Verified Successfully');
-    console.log('   Payload Audience:', payload.aud);
-    console.log('   Payload Email:', payload.email);
-    console.log('   Payload Expiry:', new Date(payload.exp * 1000).toISOString());
-    console.log('   Server Time:   ', new Date().toISOString());
-
     const { email, name, picture } = payload;
 
     let user = await User.findOne({ email });
 
     if (!user) {
-      console.log('   User not found, creating new user...');
       const passwordHash = await bcrypt.hash('GOOGLE_OAUTH_USER_' + Date.now(), 10);
       user = new User({
         username: name,
@@ -353,9 +344,6 @@ app.post('/api/google-login', async (req, res) => {
         profilePicture: picture
       });
       await user.save();
-      console.log('   New user created:', user._id);
-    } else {
-      console.log('   User found:', user._id);
     }
 
     const accessToken = jwt.sign(
@@ -370,10 +358,11 @@ app.post('/api/google-login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // FIX: Secure Cross-Site Cookie
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
@@ -388,22 +377,15 @@ app.post('/api/google-login', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ Google Login Verification Failed:');
-    console.error('   Error Message:', err.message);
-    console.error('   Server Time:', new Date().toISOString());
-    if (err.message.includes('Token used too late')) {
-      console.error('   ⚠️ CLOCK SKEW DETECTED! server time may be behind or ahead of Google time.');
-    }
+    console.error('❌ Google Login Failed:', err.message);
     res.status(400).json({ message: 'Invalid Google Token', error: err.message });
   }
 });
 
 // 4. GOOGLE AUTH (Legacy)
 app.post('/api/auth/google', async (req, res) => {
-  console.log('🔹 Google Auth Request:', req.body.email);
   try {
     const { email, name, picture } = req.body;
-
     let user = await User.findOne({ email });
 
     if (!user) {
@@ -436,10 +418,11 @@ app.post('/api/auth/google', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // FIX: Secure Cross-Site Cookie
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
@@ -458,7 +441,7 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// 5. REFRESH TOKEN
+// 5. REFRESH TOKEN (Checking for Cookie)
 app.post('/api/refresh-token', async (req, res) => {
   const { refreshToken } = req.cookies;
 
@@ -499,10 +482,11 @@ app.post('/api/refresh-token', async (req, res) => {
 
 // 6. LOGOUT
 app.post('/api/logout', (req, res) => {
+  // FIX: Clear Cookie with Same Options
   res.clearCookie('refreshToken', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax'
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax'
   });
   res.json({ message: 'Logged out successfully' });
 });
@@ -511,7 +495,6 @@ app.post('/api/logout', (req, res) => {
 app.put('/api/auth/reset-password', async (req, res) => {
   try {
     const { identifier, newPassword } = req.body;
-
     const user = await User.findOne({
       $or: [{ email: identifier }, { username: identifier }]
     });
@@ -553,10 +536,8 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// ADD PRODUCT (Admin) - NO CSRF VALIDATION
+// ADD PRODUCT (Admin)
 app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), upload.single('image'), validate({ body: productSchema }), async (req, res) => {
-  console.log('🔹 Add Product Request');
-  console.log('   Body:', req.body);
   try {
     const { name, price, originalPrice, unit, stock, category, imageUrl } = req.body;
     const bulkRule = req.body.bulkRule;
@@ -594,7 +575,7 @@ app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAF
   }
 });
 
-// UPDATE PRODUCT (Admin) - NO CSRF VALIDATION
+// UPDATE PRODUCT (Admin)
 app.put('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), upload.single('image'), validate({ body: productSchema, params: idSchema }), async (req, res) => {
   try {
     const { name, price, originalPrice, unit, stock, category, imageUrl } = req.body;
@@ -641,7 +622,7 @@ app.put('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'S
   }
 });
 
-// DELETE PRODUCT (Admin) - NO CSRF VALIDATION
+// DELETE PRODUCT (Admin)
 app.delete('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), validate({ params: idSchema }), async (req, res) => {
   try {
     await Product.findByIdAndDelete(req.params.id);
@@ -651,11 +632,10 @@ app.delete('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN',
   }
 });
 
-// DELETE CATEGORY (Admin) - Bulk Update
+// DELETE CATEGORY (Admin)
 app.delete('/api/admin/categories/:category', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
     const { category } = req.params;
-    // Update all products with this category to 'Uncategorized'
     const result = await Product.updateMany(
       { category: category },
       { category: 'Uncategorized' }
@@ -674,7 +654,7 @@ app.delete('/api/admin/categories/:category', authenticateToken, authorizeRoles(
 // ORDER ROUTES
 // =====================
 
-// PLACE ORDER - NO CSRF VALIDATION
+// PLACE ORDER
 app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -731,7 +711,7 @@ app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), asyn
     io.to('admin_room').to('staff_room').emit('newOrderNotification', {
       message: 'New order received!',
       order: {
-        id: orderId, // Map to frontend expected format
+        id: orderId,
         userId: order.user,
         username: username || req.user.username,
         mobileNumber: mobileNumber,
@@ -765,35 +745,20 @@ app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), asyn
   }
 });
 
-// GET ORDERS (User & Admin) - FIXED QUERY LOGIC
+// GET ORDERS
 app.get('/api/orders', authenticateToken, async (req, res) => {
   try {
     let query = {};
-
-    console.log('🔍 GET /api/orders called');
-    console.log('   User ID from token:', req.user.id);
-    console.log('   User role:', req.user.role);
-    console.log('   Query param userId:', req.query.userId);
-
-    // If a specific user ID is requested via query param
     if (req.query.userId) {
-      // If user is not admin/staff, they can ONLY request their own ID
       if (req.user.role !== 'ADMIN' && req.user.role !== 'STAFF' && req.query.userId !== req.user.id) {
         return res.status(403).json({ message: "Unauthorized to view other users' orders" });
       }
-      // Use the string ID directly - Mongoose will convert it
       query = { user: req.query.userId };
-    }
-    // Default behavior: If not admin/staff, force filter by own ID
-    else if (req.user.role !== 'ADMIN' && req.user.role !== 'STAFF') {
+    } else if (req.user.role !== 'ADMIN' && req.user.role !== 'STAFF') {
       query = { user: req.user.id };
     }
-    // If Admin/Staff and NO userId param, return ALL orders
-
-    console.log('   MongoDB query:', JSON.stringify(query));
 
     const orders = await Order.find(query).sort({ createdAt: -1 });
-    console.log('   Found orders:', orders.length);
 
     res.json(orders.map(o => ({
       id: o.orderId,
@@ -815,18 +780,16 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
       createdAt: o.createdAt
     })));
   } catch (err) {
-    console.error('Get orders error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// UPDATE ORDER STATUS (Admin/Staff) - NO CSRF VALIDATION
+// UPDATE ORDER STATUS
 app.put('/api/admin/orders/:id/status', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
     const { status } = req.body;
     const order = await Order.findOneAndUpdate({ orderId: req.params.id }, { status }, { new: true });
 
-    // --- SOCKET.IO EMIT ---
     if (order && order.user) {
       io.to(`user_${order.user}`).emit('orderStatusUpdated', {
         message: `Your order #${order.orderId} is now ${status}`,
@@ -846,7 +809,6 @@ app.put('/api/admin/orders/:id/status', authenticateToken, authorizeRoles('ADMIN
 // COUPON ROUTES
 // =====================
 
-// GET ALL COUPONS
 app.get('/api/coupons', async (req, res) => {
   try {
     const coupons = await Coupon.find({ isActive: true });
@@ -864,64 +826,32 @@ app.get('/api/coupons', async (req, res) => {
   }
 });
 
-// VALIDATE COUPON
 app.post('/api/coupons/validate', authenticateToken, async (req, res) => {
   try {
     const { code, orderTotal } = req.body;
     const userId = req.user.id;
-
     let username = req.user.username;
-    if (!username) {
-      const user = await User.findById(userId);
-      username = user?.username;
-    }
 
     const coupon = await Coupon.findOne({ code: code.toUpperCase(), isActive: true });
 
-    if (!coupon) {
-      return res.json({ isValid: false, error: 'Invalid coupon code' });
-    }
-
-    if (new Date(coupon.expiryDate) < new Date()) {
-      return res.json({ isValid: false, error: 'Coupon expired' });
-    }
-
-    if (username && coupon.usedBy.includes(userId)) {
-      return res.json({ isValid: false, error: 'You have already redeemed this coupon.' });
-    }
-
-    console.log('🎟️ Coupon Validation Debug:');
-    console.log('   Coupon targetUsername:', JSON.stringify(coupon.targetUsername));
-    console.log('   User username:', JSON.stringify(username));
+    if (!coupon) return res.json({ isValid: false, error: 'Invalid coupon code' });
+    if (new Date(coupon.expiryDate) < new Date()) return res.json({ isValid: false, error: 'Coupon expired' });
+    if (username && coupon.usedBy.includes(userId)) return res.json({ isValid: false, error: 'Already redeemed' });
 
     if (coupon.targetUsername && username) {
-      const couponTarget = coupon.targetUsername.trim().toLowerCase();
-      const userTarget = username.trim().toLowerCase();
-      console.log('   Comparing:', JSON.stringify(couponTarget), 'vs', JSON.stringify(userTarget));
-      console.log('   Match:', couponTarget === userTarget);
-
-      if (couponTarget !== userTarget) {
-        return res.json({ isValid: false, error: 'This coupon is not available for your account.' });
+      if (coupon.targetUsername.trim().toLowerCase() !== username.trim().toLowerCase()) {
+        return res.json({ isValid: false, error: 'Not available for your account.' });
       }
-    } else if (coupon.targetUsername && !username) {
-      console.log('   No username available for targeted coupon');
-      return res.json({ isValid: false, error: 'This coupon is not available for your account.' });
     }
 
     const isSpecialGift = !!coupon.targetUsername || coupon.type === 'SPECIAL_GIFT';
     if (!isSpecialGift && coupon.minOrderAmount && orderTotal < coupon.minOrderAmount) {
-      return res.json({
-        isValid: false,
-        error: `Order must be at least Rs. ${coupon.minOrderAmount} to use this coupon.`
-      });
+      return res.json({ isValid: false, error: `Order must be at least Rs. ${coupon.minOrderAmount}` });
     }
-    console.log('   Is Special Gift:', isSpecialGift, '- Skipping min order check:', isSpecialGift);
 
     if (coupon.type === 'FIRST_ORDER') {
       const orderCount = await Order.countDocuments({ user: userId });
-      if (orderCount > 0) {
-        return res.json({ isValid: false, error: 'This coupon is valid for first order only.' });
-      }
+      if (orderCount > 0) return res.json({ isValid: false, error: 'First order only.' });
     }
 
     res.json({
@@ -941,15 +871,11 @@ app.post('/api/coupons/validate', authenticateToken, async (req, res) => {
   }
 });
 
-// CREATE COUPON (Admin) - NO CSRF VALIDATION
 app.post('/api/admin/coupons', authenticateToken, authorizeRoles('ADMIN'), validate({ body: couponSchema }), async (req, res) => {
   try {
     const { code, discountAmount, expiry, minOrderAmount, type, targetUsername, giftMessage } = req.body;
-
     const existing = await Coupon.findOne({ code: code.toUpperCase() });
-    if (existing) {
-      return res.status(400).json({ message: 'Coupon code already exists' });
-    }
+    if (existing) return res.status(400).json({ message: 'Coupon code already exists' });
 
     const coupon = new Coupon({
       code: code.toUpperCase(),
@@ -962,66 +888,12 @@ app.post('/api/admin/coupons', authenticateToken, authorizeRoles('ADMIN'), valid
     });
     await coupon.save();
 
-    res.json({
-      message: 'Coupon created',
-      coupon: {
-        code: coupon.code,
-        discountAmount: coupon.discountAmount,
-        expiry: coupon.expiryDate.toISOString().split('T')[0],
-        minOrderAmount: coupon.minOrderAmount,
-        type: coupon.type,
-        targetUsername: coupon.targetUsername,
-        giftMessage: coupon.giftMessage
-      }
-    });
+    res.json({ message: 'Coupon created', coupon });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// UPDATE COUPON (Admin) - NO CSRF VALIDATION
-app.put('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'), validate({ body: couponSchema, params: codeSchema }), async (req, res) => {
-  try {
-    const { code, discountAmount, expiry, minOrderAmount } = req.body;
-    const originalCode = req.params.code.toUpperCase();
-
-    if (code.toUpperCase() !== originalCode) {
-      const existing = await Coupon.findOne({ code: code.toUpperCase() });
-      if (existing) {
-        return res.status(400).json({ message: 'Coupon code already exists' });
-      }
-    }
-
-    const coupon = await Coupon.findOneAndUpdate(
-      { code: originalCode },
-      {
-        code: code.toUpperCase(),
-        discountAmount,
-        minOrderAmount: minOrderAmount || 0,
-        expiryDate: new Date(expiry)
-      },
-      { new: true }
-    );
-
-    if (!coupon) {
-      return res.status(404).json({ message: 'Coupon not found' });
-    }
-
-    res.json({
-      message: 'Coupon updated',
-      coupon: {
-        code: coupon.code,
-        discountAmount: coupon.discountAmount,
-        expiry: coupon.expiryDate.toISOString().split('T')[0],
-        minOrderAmount: coupon.minOrderAmount
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE COUPON (Admin) - NO CSRF VALIDATION
 app.delete('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'), validate({ params: codeSchema }), async (req, res) => {
   try {
     await Coupon.findOneAndDelete({ code: req.params.code.toUpperCase() });
@@ -1035,7 +907,6 @@ app.delete('/api/admin/coupons/:code', authenticateToken, authorizeRoles('ADMIN'
 // STAFF MANAGEMENT ROUTES
 // =====================
 
-// GET ALL STAFF (Admin only)
 app.get('/api/admin/staff', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
     const staffUsers = await User.find({ role: 'STAFF' }).select('-passwordHash');
@@ -1051,53 +922,26 @@ app.get('/api/admin/staff', authenticateToken, authorizeRoles('ADMIN'), async (r
   }
 });
 
-// CREATE STAFF (Admin only) - NO CSRF VALIDATION
 app.post('/api/admin/staff', authenticateToken, authorizeRoles('ADMIN'), validate({ body: staffSchema }), async (req, res) => {
   try {
     const { username, email, password } = req.body;
-
     const existing = await User.findOne({ $or: [{ email }, { username }] });
-    if (existing) {
-      return res.status(400).json({ message: 'User with this email or username already exists' });
-    }
+    if (existing) return res.status(400).json({ message: 'User exists' });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const staff = new User({
-      username,
-      email,
-      passwordHash,
-      role: 'STAFF'
-    });
+    const staff = new User({ username, email, passwordHash, role: 'STAFF' });
     await staff.save();
 
-    res.status(201).json({
-      message: 'Staff created successfully',
-      staff: {
-        id: staff._id,
-        username: staff.username,
-        email: staff.email,
-        role: staff.role,
-        createdAt: staff.createdAt
-      }
-    });
+    res.status(201).json({ message: 'Staff created successfully', staff });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE STAFF (Admin only) - NO CSRF VALIDATION
 app.delete('/api/admin/staff/:id', authenticateToken, authorizeRoles('ADMIN'), validate({ params: idSchema }), async (req, res) => {
   try {
     const staff = await User.findById(req.params.id);
-
-    if (!staff) {
-      return res.status(404).json({ message: 'Staff not found' });
-    }
-
-    if (staff.role !== 'STAFF') {
-      return res.status(400).json({ message: 'Cannot delete non-staff users' });
-    }
-
+    if (!staff || staff.role !== 'STAFF') return res.status(400).json({ message: 'Invalid staff deletion' });
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'Staff deleted successfully' });
   } catch (err) {
@@ -1105,11 +949,9 @@ app.delete('/api/admin/staff/:id', authenticateToken, authorizeRoles('ADMIN'), v
   }
 });
 
-
 // =====================
 // GEO ROUTES
 // =====================
-
 app.get('/api/geo/reverse', async (req, res) => {
   const { lat, lng } = req.query;
   res.json({ address: `Detected Location (${parseFloat(lat).toFixed(5)}, ${parseFloat(lng).toFixed(5)})` });

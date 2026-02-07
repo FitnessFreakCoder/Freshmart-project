@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { useStore } from './StoreContext';
+import { useStore } from '../context/StoreContext'; // Adjusted path if needed
 import { UserRole } from '../types';
 
 interface SocketContextType {
@@ -12,6 +12,9 @@ const SocketContext = createContext<SocketContextType>({ socket: null, isConnect
 
 export const useSocket = () => useContext(SocketContext);
 
+// 1. Define URL outside component or strictly inside effect to avoid re-declarations
+const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -19,46 +22,61 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const user = state.user;
 
     useEffect(() => {
-        // Initialize Socket
-        // Initialize Socket
-        const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        // 2. Initialize Socket with correct configuration
         const newSocket = io(SOCKET_URL, {
             withCredentials: true,
             autoConnect: true,
             reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
         });
 
+        // Connection Event Listeners
         newSocket.on('connect', () => {
             console.log('✅ Socket connected:', newSocket.id);
             setIsConnected(true);
         });
 
-        newSocket.on('disconnect', () => {
-            console.log('❌ Socket disconnected');
+        newSocket.on('connect_error', (err) => {
+            console.error('❌ Socket Connection Error:', err.message);
+            setIsConnected(false);
+        });
+
+        newSocket.on('disconnect', (reason) => {
+            console.log('⚠️ Socket disconnected:', reason);
             setIsConnected(false);
         });
 
         setSocket(newSocket);
 
+        // Cleanup on unmount
         return () => {
-            newSocket.disconnect();
+            if (newSocket) {
+                console.log('🔌 Disconnecting socket...');
+                newSocket.disconnect();
+            }
         };
-    }, []);
+    }, []); // Empty dependency array = runs once on mount
 
-    // Handle Room Joining based on User Role
+    // 3. Handle Room Joining (Runs when socket or user changes)
     useEffect(() => {
-        if (!socket || !user) return;
+        if (!socket || !isConnected || !user) return;
 
-        // Always join personal user room for own order updates
+        console.log(`👤 Joining personal room: user_${user.id}`);
         socket.emit('join_room', `user_${user.id}`);
 
-        // If Admin/Staff, also join management rooms
-        if (user.role === UserRole.ADMIN) {
+        if (user.role === 'ADMIN') {
+            console.log('🛡️ Joining Admin Room');
             socket.emit('join_room', 'admin_room');
-        } else if (user.role === UserRole.STAFF) {
+        }
+
+        if (user.role === 'STAFF' || user.role === 'ADMIN') {
+            // Often Admins also need to hear Staff alerts, if not, remove the OR condition
+            console.log('👷 Joining Staff Room');
             socket.emit('join_room', 'staff_room');
         }
-    }, [socket, user]);
+
+    }, [socket, isConnected, user]);
 
     return (
         <SocketContext.Provider value={{ socket, isConnected }}>
