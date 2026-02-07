@@ -103,8 +103,13 @@ const {
 
 // CSRF Token Endpoint
 app.get('/api/csrf-token', (req, res) => {
-  const csrfToken = generateToken(req, res);
-  res.json({ csrfToken });
+  try {
+    const csrfToken = generateToken(req, res);
+    res.json({ csrfToken });
+  } catch (err) {
+    console.error('CSRF Gen Error:', err);
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
 });
 
 // CSRF Error Handler
