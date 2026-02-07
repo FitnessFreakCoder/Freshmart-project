@@ -11,6 +11,7 @@ import { UserRole } from '../types';
 type ViewState = 'LOGIN' | 'REGISTER' | 'FORGOT';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '1022561909186-33i8psb5samvvb42kmve5gs4i3vgulhu.apps.googleusercontent.com';
+import SplashScreen from '../components/SplashScreen';
 
 const Login: React.FC = () => {
     const [view, setView] = useState<ViewState>('LOGIN');
@@ -35,17 +36,21 @@ const Login: React.FC = () => {
     const navigate = useNavigate();
     const { state } = useStore();
 
-    // Redirect if already logged in - always go to home
+    // Redirect if already logged in - check only on mount to prevent interfering with login flow
     React.useEffect(() => {
         if (state.user) {
             navigate('/home');
         }
-    }, [state.user, navigate]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleLoginRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+
+        // Artificial delay for UX (2.5 seconds)
+        await new Promise(resolve => setTimeout(resolve, 2500));
 
         try {
             let user;
@@ -84,6 +89,9 @@ const Login: React.FC = () => {
     const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
         setLoading(true);
         setError('');
+
+        // Artificial delay for UX (2.5 seconds)
+        await new Promise(resolve => setTimeout(resolve, 2500));
 
         try {
             const token = credentialResponse.credential;
@@ -150,17 +158,12 @@ const Login: React.FC = () => {
 
     // Redirecting Overlay
     if (redirecting) {
-        return (
-            <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
-                <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p className="text-xl font-semibold text-white">Redirecting to Dashboard...</p>
-            </div>
-        );
+        return <SplashScreen />;
     }
 
     return (
         <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-            <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
+            <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center py-12 sm:px-6 lg:px-8">
                 <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md border border-gray-100">
 
                     {/* Header */}
