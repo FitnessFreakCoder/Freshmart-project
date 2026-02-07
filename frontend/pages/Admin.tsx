@@ -369,7 +369,13 @@ const Admin: React.FC = () => {
         }
     };
 
-    if (!state.user || (!isAdmin && !isStaff)) return <div className="p-8 text-center text-red-500 font-bold">Access Denied</div>;
+    if (!state.user) {
+        return null; // Or a loading spinner, while the useEffect redirects
+    }
+
+    if (!isAdmin && !isStaff) {
+        return <div className="p-8 text-center text-red-500 font-bold">Access Denied</div>;
+    }
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-8">

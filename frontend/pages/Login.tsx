@@ -31,18 +31,21 @@ const Login: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [redirecting, setRedirecting] = useState(false);
 
-    const { login, register, loginWithGoogle } = useAuth();
+    const { login, register, loginWithGoogle, user, isLoading } = useAuth();
     const { dispatch } = useStore();
     const navigate = useNavigate();
-    const { state } = useStore();
 
-    // Redirect if already logged in - check only on mount to prevent interfering with login flow
+    // Redirect if already logged in - BUT only if we aren't in the middle of a manual login process (loading/redirecting)
     React.useEffect(() => {
-        if (state.user) {
-            navigate('/home');
+        // We check !loading (local state) and !redirecting (local state) to ensure we don't interrupt the manual login flow animations
+        if (!isLoading && user && !loading && !redirecting) {
+            if (user.role === UserRole.ADMIN || user.role === UserRole.STAFF) {
+                navigate('/admin');
+            } else {
+                navigate('/home');
+            }
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [user, isLoading, navigate, loading, redirecting]);
 
     const handleLoginRegister = async (e: React.FormEvent) => {
         e.preventDefault();

@@ -3,9 +3,11 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ShoppingCart, User as UserIcon, LogOut, Menu, X, MapPin } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { useAuth } from '../context/AuthContext';
 
 const Navbar: React.FC = () => {
   const { state, dispatch, isAdmin, isStaff } = useStore();
+  const { logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
@@ -20,8 +22,8 @@ const Navbar: React.FC = () => {
     closeMenu();
   };
 
-  const confirmLogout = () => {
-    dispatch({ type: 'SET_USER', payload: null });
+  const confirmLogout = async () => {
+    await logout();
     setShowLogoutConfirm(false);
     navigate('/');
   };
