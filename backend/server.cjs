@@ -292,6 +292,9 @@ const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 app.post('/api/google-login', async (req, res) => {
   const { token } = req.body;
 
+  console.log('🔹 Google Login Request received');
+  console.log('   Token (first 20 chars):', token.substring(0, 20) + '...');
+
   try {
     const ticket = await client.verifyIdToken({
       idToken: token,
@@ -299,11 +302,18 @@ app.post('/api/google-login', async (req, res) => {
     });
     const payload = ticket.getPayload();
 
+    console.log('✅ Google Token Verified Successfully');
+    console.log('   Payload Audience:', payload.aud);
+    console.log('   Payload Email:', payload.email);
+    console.log('   Payload Expiry:', new Date(payload.exp * 1000).toISOString());
+    console.log('   Server Time:   ', new Date().toISOString());
+
     const { email, name, picture } = payload;
 
     let user = await User.findOne({ email });
 
     if (!user) {
+      console.log('   User not found, creating new user...');
       const passwordHash = await bcrypt.hash('GOOGLE_OAUTH_USER_' + Date.now(), 10);
       user = new User({
         username: name,
@@ -313,6 +323,9 @@ app.post('/api/google-login', async (req, res) => {
         profilePicture: picture
       });
       await user.save();
+      console.log('   New user created:', user._id);
+    } else {
+      console.log('   User found:', user._id);
     }
 
     const accessToken = jwt.sign(
@@ -345,8 +358,13 @@ app.post('/api/google-login', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Google Login Error:', err);
-    res.status(400).json({ message: 'Invalid Google Token' });
+    console.error('❌ Google Login Verification Failed:');
+    console.error('   Error Message:', err.message);
+    console.error('   Server Time:', new Date().toISOString());
+    if (err.message.includes('Token used too late')) {
+      console.error('   ⚠️ CLOCK SKEW DETECTED! server time may be behind or ahead of Google time.');
+    }
+    res.status(400).json({ message: 'Invalid Google Token', error: err.message });
   }
 });
 
@@ -511,7 +529,7 @@ app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAF
   console.log('   Body:', req.body);
   try {
     const { name, price, originalPrice, unit, stock, category, imageUrl } = req.body;
-    const bulkRule = req.body.bulkRule ? JSON.parse(req.body.bulkRule) : null;
+    const bulkRule = req.body.bulkRule;
 
     const finalImageUrl = req.file ? `/uploads/${req.file.filename}` : (imageUrl || '');
 
@@ -550,7 +568,7 @@ app.post('/api/admin/products', authenticateToken, authorizeRoles('ADMIN', 'STAF
 app.put('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), upload.single('image'), validate({ body: productSchema, params: idSchema }), async (req, res) => {
   try {
     const { name, price, originalPrice, unit, stock, category, imageUrl } = req.body;
-    const bulkRule = req.body.bulkRule ? JSON.parse(req.body.bulkRule) : null;
+    const bulkRule = req.body.bulkRule;
 
     const updateData = {
       name,
@@ -598,6 +616,25 @@ app.delete('/api/admin/products/:id', authenticateToken, authorizeRoles('ADMIN',
   try {
     await Product.findByIdAndDelete(req.params.id);
     res.json({ message: 'Product deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE CATEGORY (Admin) - Bulk Update
+app.delete('/api/admin/categories/:category', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+  try {
+    const { category } = req.params;
+    // Update all products with this category to 'Uncategorized'
+    const result = await Product.updateMany(
+      { category: category },
+      { category: 'Uncategorized' }
+    );
+
+    res.json({
+      message: `Category '${category}' deleted`,
+      updatedCount: result.modifiedCount
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

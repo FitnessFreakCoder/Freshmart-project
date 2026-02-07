@@ -121,6 +121,10 @@ export const mockApi = {
     await api.deleteProduct(id);
   },
 
+  deleteCategory: async (category: string): Promise<void> => {
+    await api.deleteCategory(category);
+  },
+
   getOrders: async (userId?: number | string): Promise<Order[]> => {
     const orders = await api.getOrders(userId);
     return orders.map((o: any) => ({

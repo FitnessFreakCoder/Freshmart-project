@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
-import { useNavigate, Link } from 'react-router-dom';
-import { mockApi } from '../services/mockBackend';
+import { useNavigate } from 'react-router-dom';
+// Using the REAL API now instead of mockApi
+import api from '../services/api';
 import { Product, Order, OrderStatus, UserRole, Coupon } from '../types';
 import { Edit, Trash, Package, Map, Tag, Plus, ExternalLink, User as UserIcon, Phone, Upload, X, Image as ImageIcon, Users, Calendar, ChevronDown, ChevronUp, Gift, ShoppingBag } from 'lucide-react';
 
@@ -56,6 +56,9 @@ const Admin: React.FC = () => {
     const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all');
     const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
+    // Category Management State
+    const [showCategoryModal, setShowCategoryModal] = useState(false);
+
     // Customer Coupon State
     const [showCustomerCouponModal, setShowCustomerCouponModal] = useState(false);
     const [targetCustomer, setTargetCustomer] = useState<string | null>(null);
@@ -83,28 +86,33 @@ const Admin: React.FC = () => {
     useEffect(() => {
         // Refresh Data on mount
         const refresh = async () => {
-            const prods = await mockApi.getProducts();
-            dispatch({ type: 'SET_PRODUCTS', payload: prods });
-            const orders = await mockApi.getOrders();
-            dispatch({ type: 'SET_ORDERS', payload: orders });
-            const coupons = await mockApi.getCoupons();
-            dispatch({ type: 'SET_COUPONS', payload: coupons });
+            try {
+                const prods = await api.getProducts();
+                dispatch({ type: 'SET_PRODUCTS', payload: prods });
+
+                // Staff & Admin can see orders
+                const orders = await api.getOrders();
+                dispatch({ type: 'SET_ORDERS', payload: orders });
+
+                // Only Admin can see coupons
+                if (isAdmin) {
+                    const coupons = await api.getCoupons();
+                    dispatch({ type: 'SET_COUPONS', payload: coupons });
+                }
+            } catch (error) {
+                console.error("Error loading initial data", error);
+            }
         };
         refresh();
-    }, [dispatch]);
+    }, [dispatch, isAdmin]);
 
     // Load staff list when Staff tab is selected
     useEffect(() => {
         if (activeTab === 'staff' && isAdmin) {
             const loadStaff = async () => {
                 try {
-                    const response = await fetch('http://localhost:5000/api/admin/staff', {
-                        headers: { 'Authorization': `Bearer ${JSON.parse(localStorage.getItem('freshmart_user') || '{}').token}` }
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        setStaffList(data);
-                    }
+                    const staffData = await api.getStaff();
+                    setStaffList(staffData);
                 } catch (err) {
                     console.error('Failed to load staff:', err);
                 }
@@ -112,6 +120,20 @@ const Admin: React.FC = () => {
             loadStaff();
         }
     }, [activeTab, isAdmin]);
+
+    const handleDeleteCategory = async (category: string) => {
+        if (window.confirm(`Are you sure you want to delete category '${category}'? All associated products will be marked as 'Uncategorized'.`)) {
+            try {
+                await api.deleteCategory(category);
+                // Refresh products to reflect category changes
+                const prods = await api.getProducts();
+                dispatch({ type: 'SET_PRODUCTS', payload: prods });
+            } catch (error) {
+                console.error("Failed to delete category:", error);
+                alert("Failed to delete category.");
+            }
+        }
+    };
 
     const handleProductSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -132,12 +154,17 @@ const Admin: React.FC = () => {
             imageUrl: finalProduct.imageFile ? undefined : (finalProduct.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80')
         };
 
-        await mockApi.saveProduct(productToSave as Product);
+        try {
+            await api.saveProduct(productToSave as Product);
 
-        // Refresh products after save
-        const prods = await mockApi.getProducts();
-        dispatch({ type: 'SET_PRODUCTS', payload: prods });
-        setEditingProduct(null);
+            // Refresh products after save
+            const prods = await api.getProducts();
+            dispatch({ type: 'SET_PRODUCTS', payload: prods });
+            setEditingProduct(null);
+        } catch (error) {
+            console.error("Save failed:", error);
+            alert("Failed to save product.");
+        }
     };
 
     // Helper to resolve image URL (handle relative /uploads/ paths from backend)
@@ -174,10 +201,10 @@ const Admin: React.FC = () => {
     const handleProductDelete = async (id: number | string) => {
         if (window.confirm("Are you sure you want to delete this product? This action cannot be undone.")) {
             try {
-                await mockApi.deleteProduct(id);
+                await api.deleteProduct(id);
 
                 // Immediately fetch fresh data to update UI
-                const prods = await mockApi.getProducts();
+                const prods = await api.getProducts();
                 dispatch({ type: 'SET_PRODUCTS', payload: prods });
 
                 // If we were editing this product, close the modal
@@ -198,14 +225,14 @@ const Admin: React.FC = () => {
             try {
                 if (editingCouponCode) {
                     // Update Existing
-                    await mockApi.updateCoupon(editingCouponCode, newCoupon as Coupon);
+                    await api.updateCoupon(editingCouponCode, newCoupon as Coupon);
                 } else {
                     // Create New
-                    await mockApi.createCoupon(newCoupon as Coupon);
+                    await api.createCoupon(newCoupon as Coupon);
                 }
 
                 // Refetch to stay in sync
-                const coupons = await mockApi.getCoupons();
+                const coupons = await api.getCoupons();
                 dispatch({ type: 'SET_COUPONS', payload: coupons });
 
                 setIsAddingCoupon(false);
@@ -232,10 +259,10 @@ const Admin: React.FC = () => {
 
     const handleDeleteCoupon = async (code: string) => {
         if (window.confirm("Are you sure you want to delete this coupon?")) {
-            await mockApi.deleteCoupon(code);
+            await api.deleteCoupon(code);
 
             // Refetch data from backend to ensure state is synchronized
-            const coupons = await mockApi.getCoupons();
+            const coupons = await api.getCoupons();
             dispatch({ type: 'SET_COUPONS', payload: coupons });
 
             // If we were editing this coupon, close the form
@@ -246,7 +273,7 @@ const Admin: React.FC = () => {
     };
 
     const updateStatus = async (id: string, status: OrderStatus) => {
-        await mockApi.updateOrderStatus(id, status);
+        await api.updateOrderStatus(id, status);
         dispatch({ type: 'UPDATE_ORDER_STATUS', payload: { id, status } });
     };
 
@@ -322,7 +349,7 @@ const Admin: React.FC = () => {
         if (!targetCustomer || !customerCoupon.code) return;
 
         try {
-            await mockApi.createCoupon({
+            await api.createCoupon({
                 code: customerCoupon.code.toUpperCase(),
                 discountAmount: Number(customerCoupon.discountAmount),
                 expiry: customerCoupon.expiry,
@@ -332,7 +359,7 @@ const Admin: React.FC = () => {
             });
 
             // Refresh coupons
-            const coupons = await mockApi.getCoupons();
+            const coupons = await api.getCoupons();
             dispatch({ type: 'SET_COUPONS', payload: coupons });
 
             // Reset state
@@ -404,7 +431,13 @@ const Admin: React.FC = () => {
 
             {activeTab === 'products' && isAdmin && (
                 <div className="space-y-6">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
+                        <button
+                            onClick={() => setShowCategoryModal(true)}
+                            className="flex items-center gap-2 bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 shadow-sm font-medium transition-colors"
+                        >
+                            <Tag size={18} /> Manage Categories
+                        </button>
                         <button
                             onClick={() => setEditingProduct({ name: '', price: 0, originalPrice: 0, stock: 0, category: '', imageUrl: '', unit: '', bulkRule: { qty: 0, price: 0 } })}
                             className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 shadow-sm font-bold"
@@ -412,6 +445,51 @@ const Admin: React.FC = () => {
                             <Plus size={18} /> Add New Product
                         </button>
                     </div>
+
+                    {/* Manage Categories Modal */}
+                    {showCategoryModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-xl font-bold text-gray-800">Manage Categories</h2>
+                                    <button onClick={() => setShowCategoryModal(false)} className="text-gray-500 hover:text-gray-700">
+                                        <X size={20} />
+                                    </button>
+                                </div>
+                                <p className="text-sm text-gray-500 mb-4">
+                                    Deleting a category will move all associated products to "Uncategorized".
+                                </p>
+                                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                                    {Array.from(new Set(state.products.map(p => p.category).filter(Boolean)))
+                                        .sort()
+                                        .filter(cat => cat !== 'Uncategorized')
+                                        .map(cat => (
+                                            <div key={cat} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                                <span className="font-medium text-gray-900">{cat}</span>
+                                                <button
+                                                    onClick={() => handleDeleteCategory(cat)}
+                                                    className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                                                    title="Delete Category"
+                                                >
+                                                    <Trash size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    {Array.from(new Set(state.products.map(p => p.category).filter(Boolean))).length === 0 && (
+                                        <p className="text-center text-gray-500 py-4">No categories found.</p>
+                                    )}
+                                </div>
+                                <div className="mt-6 flex justify-end">
+                                    <button
+                                        onClick={() => setShowCategoryModal(false)}
+                                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Product Form Modal */}
                     {editingProduct && (
@@ -479,12 +557,21 @@ const Admin: React.FC = () => {
                                     </div>
                                     <div>
                                         <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
-                                        <input
-                                            className="w-full border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none text-gray-900"
-                                            value={editingProduct.category || ''}
-                                            onChange={e => setEditingProduct({ ...editingProduct, category: e.target.value })}
-                                            required
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                list="category-options"
+                                                className="w-full border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none text-gray-900"
+                                                value={editingProduct.category || ''}
+                                                onChange={e => setEditingProduct({ ...editingProduct, category: e.target.value })}
+                                                placeholder="Select or type new category"
+                                                required
+                                            />
+                                            <datalist id="category-options">
+                                                {Array.from(new Set(state.products.map(p => p.category).filter(Boolean))).sort().map(cat => (
+                                                    <option key={cat} value={cat} />
+                                                ))}
+                                            </datalist>
+                                        </div>
                                     </div>
 
                                     {/* Bulk Rule Section */}
@@ -540,7 +627,7 @@ const Admin: React.FC = () => {
                                                     Click to Upload Image
                                                 </span>
                                                 <span className="text-xs text-gray-500">
-                                                    (PNG, JPG - Max 800KB)
+                                                    (PNG, JPG - Max 5MB)
                                                 </span>
                                             </div>
                                             <input
@@ -702,7 +789,7 @@ const Admin: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </div >
             )}
 
             {activeTab === 'coupons' && isAdmin && (
@@ -972,7 +1059,6 @@ const Admin: React.FC = () => {
                 </div>
             )}
 
-            {/* Staff Management Tab */}
             {activeTab === 'staff' && isAdmin && (
                 <div className="space-y-6">
                     <div className="flex justify-between items-center">
@@ -999,30 +1085,15 @@ const Admin: React.FC = () => {
                                 e.preventDefault();
                                 if (newStaff.username && newStaff.email && newStaff.password) {
                                     try {
-                                        const response = await fetch('http://localhost:5000/api/admin/staff', {
-                                            method: 'POST',
-                                            headers: {
-                                                'Content-Type': 'application/json',
-                                                'Authorization': `Bearer ${JSON.parse(localStorage.getItem('freshmart_user') || '{}').token}`
-                                            },
-                                            body: JSON.stringify(newStaff)
-                                        });
-                                        const data = await response.json();
-                                        if (response.ok) {
-                                            alert('Staff account created successfully!');
-                                            setIsAddingStaff(false);
-                                            setNewStaff({ username: '', email: '', password: '' });
-                                            // Refresh staff list
-                                            const staffRes = await fetch('http://localhost:5000/api/admin/staff', {
-                                                headers: { 'Authorization': `Bearer ${JSON.parse(localStorage.getItem('freshmart_user') || '{}').token}` }
-                                            });
-                                            const staffData = await staffRes.json();
-                                            setStaffList(staffData);
-                                        } else {
-                                            alert(data.message || 'Failed to create staff');
-                                        }
-                                    } catch (err) {
-                                        alert('Error creating staff account');
+                                        await api.createStaff(newStaff);
+                                        alert('Staff account created successfully!');
+                                        setIsAddingStaff(false);
+                                        setNewStaff({ username: '', email: '', password: '' });
+                                        // Refresh staff list
+                                        const staffData = await api.getStaff();
+                                        setStaffList(staffData);
+                                    } catch (err: any) {
+                                        alert(err.message || 'Error creating staff account');
                                     }
                                 }
                             }} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
@@ -1108,13 +1179,8 @@ const Admin: React.FC = () => {
                                                     onClick={async () => {
                                                         if (window.confirm(`Are you sure you want to delete staff "${staff.username}"?`)) {
                                                             try {
-                                                                const response = await fetch(`http://localhost:5000/api/admin/staff/${staff.id}`, {
-                                                                    method: 'DELETE',
-                                                                    headers: { 'Authorization': `Bearer ${JSON.parse(localStorage.getItem('freshmart_user') || '{}').token}` }
-                                                                });
-                                                                if (response.ok) {
-                                                                    setStaffList(staffList.filter(s => s.id !== staff.id));
-                                                                }
+                                                                await api.deleteStaff(staff.id);
+                                                                setStaffList(staffList.filter(s => s.id !== staff.id));
                                                             } catch (err) {
                                                                 alert('Error deleting staff');
                                                             }
@@ -1328,7 +1394,7 @@ const Admin: React.FC = () => {
                     )}
                 </div>
             )}
-        </div>
+        </div >
     );
 };
 

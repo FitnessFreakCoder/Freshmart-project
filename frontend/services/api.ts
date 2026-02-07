@@ -44,19 +44,13 @@ const apiRequest = async (
 ): Promise<any> => {
     const url = `${API_BASE}${endpoint}`;
 
-    // 0. Ensure CSRF Token for state-changing requests
-    // SKIP for auth routes (Login/Register don't need CSRF)
-
-  
-
     // 1. Prepare headers
     const headers: Record<string, string> = {
         ...getAuthHeaders(),
         ...(options.headers as Record<string, string> || {})
     };
 
-   
-
+    // Auto-set Content-Type to JSON unless using FormData
     if (!(options.body instanceof FormData)) {
         headers['Content-Type'] = 'application/json';
     }
@@ -87,6 +81,11 @@ const apiRequest = async (
     try {
         let response = await performRequest();
 
+        // --- FIX: Handle Mock Backend returning plain objects directly ---
+        // If 'response' is a plain object and not a standard Response, return it immediately
+        if (response && typeof (response as any).json !== 'function') {
+            return response;
+        }
 
         // 4. Handle 401 (Unauthorized) -> Try Refresh
         if (response.status === 401) {
@@ -115,15 +114,26 @@ const apiRequest = async (
             }
         }
 
-        console.log('[FreshMart API] Response status:', response.status);
-
+        // --- FIX: Safe Response Parsing ---
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ message: 'Request failed' }));
+            let errorData;
+            try {
+                errorData = await response.json();
+            } catch (e) {
+                errorData = { message: response.statusText || 'Request failed' };
+            }
             throw new Error(errorData.message || errorData.error || 'Request failed');
         }
 
-        const data = await response.json();
-        return data;
+        // Check if response has content before parsing
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            return await response.json();
+        } else {
+            // If response is not JSON (e.g., plain text), return text or empty object
+            const text = await response.text();
+            return text ? { message: text } : {};
+        }
 
     } catch (error: any) {
         console.error('[FreshMart API] Request error:', error.message);
@@ -192,6 +202,7 @@ export const api = {
             if (product.unit) formData.append('unit', product.unit);
             formData.append('stock', String(product.stock));
             formData.append('category', product.category);
+            // FormData REQUIRES strings, so we must stringify the object
             if (product.bulkRule) formData.append('bulkRule', JSON.stringify(product.bulkRule));
             formData.append('image', product.imageFile);
 
@@ -208,13 +219,19 @@ export const api = {
                 stock: product.stock,
                 category: product.category,
                 imageUrl: product.imageUrl,
-                bulkRule: product.bulkRule ? JSON.stringify(product.bulkRule) : null
+                // --- FIX: Do NOT stringify nested objects when sending JSON content-type ---
+                // The backend parser expects a JSON object here, not a string of JSON.
+                bulkRule: product.bulkRule ? product.bulkRule : null
             })
         });
     },
 
     deleteProduct: async (id: string | number) => {
         return apiRequest(`/admin/products/${id}`, { method: 'DELETE' });
+    },
+
+    deleteCategory: async (category: string) => {
+        return apiRequest(`/admin/categories/${encodeURIComponent(category)}`, { method: 'DELETE' });
     },
 
     // =====================
@@ -280,7 +297,26 @@ export const api = {
     reverseGeocode: async (lat: number, lng: number) => {
         const response = await apiRequest(`/geo/reverse?lat=${lat}&lng=${lng}`);
         return response.address;
-    }
+    },
+
+    // =====================
+    // STAFF ENDPOINTS
+    // =====================
+
+    getStaff: async () => {
+        return apiRequest('/admin/staff');
+    },
+
+    createStaff: async (staffData: any) => {
+        return apiRequest('/admin/staff', {
+            method: 'POST',
+            body: JSON.stringify(staffData)
+        });
+    },
+
+    deleteStaff: async (id: string) => {
+        return apiRequest(`/admin/staff/${id}`, { method: 'DELETE' });
+    },
 };
 
 export default api;
