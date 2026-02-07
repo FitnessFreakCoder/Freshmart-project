@@ -92,8 +92,8 @@ const {
   cookieName: 'x-csrf-token',
   cookieOptions: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: true, // Required for SameSite: None 
+    sameSite: 'none', // Required for Cross-Site (Vercel -> Render)
     path: '/'
   },
   size: 64,

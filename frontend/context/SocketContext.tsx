@@ -20,7 +20,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     useEffect(() => {
         // Initialize Socket
-        const newSocket = io('http://localhost:5000', {
+        // const newSocket = io('http://localhost:5000', { // Local
+        const newSocket = io('https://freshmart-project.onrender.com', { // Production
             withCredentials: true,
             autoConnect: true,
             reconnection: true,
