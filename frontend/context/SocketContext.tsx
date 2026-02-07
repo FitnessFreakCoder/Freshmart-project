@@ -20,8 +20,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     useEffect(() => {
         // Initialize Socket
-        // const newSocket = io('http://localhost:5000', { // Local
-        const newSocket = io('https://freshmart-project.onrender.com', { // Production
+        // Initialize Socket
+        const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const newSocket = io(SOCKET_URL, {
             withCredentials: true,
             autoConnect: true,
             reconnection: true,
