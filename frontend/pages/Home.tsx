@@ -31,9 +31,15 @@ const Home: React.FC = () => {
     }, [dispatch]);
 
     const filteredProducts = state.products.filter(p => {
-        const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-        const matchCat = selectedCategory === 'All' || p.category === selectedCategory;
-        return matchSearch && matchCat;
+        const term = search.toLowerCase().trim();
+        // If we have a search term, we do a global search across Name and Category
+        // We ignore the selectedCategory because we auto-set it to 'All' on input change, 
+        // but even if we didn't, a global search usually overrides filters in this UX pattern.
+        if (term) {
+            return p.name.toLowerCase().includes(term) || p.category.toLowerCase().includes(term);
+        }
+        // Otherwise apply category filter
+        return selectedCategory === 'All' || p.category === selectedCategory;
     });
 
     return (
@@ -46,10 +52,13 @@ const Home: React.FC = () => {
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                     <input
                         type="text"
-                        placeholder="Search for 'milk', 'bread'..."
+                        placeholder="K chaiyo khojnu hoss......"
                         className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-shadow text-gray-900 placeholder-gray-400"
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e) => {
+                            setSearch(e.target.value);
+                            if (e.target.value) setSelectedCategory('All');
+                        }}
                     />
                 </div>
             </div>

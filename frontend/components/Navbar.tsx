@@ -48,7 +48,7 @@ const Navbar: React.FC = () => {
               <MapPin size={18} className="text-orange-500" />
               <div className="flex flex-col leading-none">
                 <span className="text-[10px] font-bold text-gray-800">Delivery to</span>
-                <span className="text-xs text-gray-500 truncate max-w-[150px]">Kathmandu, Nepal...</span>
+                <span className="text-xs text-gray-500 leading-snug">kakarvitta,ittabhatta,turkeny,dokandada,governsari,purnechowk</span>
               </div>
             </div>
           </div>
