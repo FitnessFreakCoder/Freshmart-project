@@ -3,7 +3,7 @@
  * HTTP client for communicating with the Express backend
  */
 
-const API_BASE = 'https://freshmart-project.onrender.com/api';
+import { API_BASE } from '../config';
 
 // In-memory access token (set by AuthContext)
 let memoryAccessToken: string | null = null;

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { Product, Order, OrderStatus, UserRole, Coupon } from '../types';
 import { Edit, Trash, Package, Map, Tag, Plus, ExternalLink, User as UserIcon, Phone, Upload, X, Image as ImageIcon, Users, Calendar, ChevronDown, ChevronUp, Gift, ShoppingBag } from 'lucide-react';
+import { getImageUrl } from '../config';
 
 // Helper to format date labels
 const getDateLabel = (dateStr: string): string => {
@@ -168,12 +169,9 @@ const Admin: React.FC = () => {
     };
 
     // Helper to resolve image URL (handle relative /uploads/ paths from backend)
-    const getImageUrl = (url: string) => {
+    const resolveImageUrl = (url: string) => {
         if (!url) return 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
-        if (url.startsWith('/uploads/')) {
-            return `https://freshmart-project.onrender.com${url}`;
-        }
-        return url;
+        return getImageUrl(url);
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -680,7 +678,7 @@ const Admin: React.FC = () => {
                     <div className="md:hidden space-y-4">
                         {state.products.map(p => (
                             <div key={p.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-start gap-4">
-                                <img className="h-16 w-16 rounded-lg object-cover bg-gray-50" src={getImageUrl(p.imageUrl)} alt={p.name} />
+                                <img className="h-16 w-16 rounded-lg object-cover bg-gray-50" src={resolveImageUrl(p.imageUrl)} alt={p.name} />
                                 <div className="flex-1">
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -740,7 +738,7 @@ const Admin: React.FC = () => {
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center">
                                                 <div className="h-10 w-10 flex-shrink-0">
-                                                    <img className="h-10 w-10 rounded-full object-cover" src={getImageUrl(p.imageUrl)} alt="" />
+                                                    <img className="h-10 w-10 rounded-full object-cover" src={resolveImageUrl(p.imageUrl)} alt="" />
                                                 </div>
                                                 <div className="ml-4">
                                                     <div className="text-sm font-medium text-gray-900">{p.name}</div>

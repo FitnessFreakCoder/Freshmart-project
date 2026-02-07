@@ -22,6 +22,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# MongoDB local data
+mongo-data/
+
 # Backend specific
 backend/uploads/*
 !backend/uploads/.gitkeep

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useStore } from './StoreContext';
 import { UserRole } from '../types';
+import { SOCKET_URL } from '../config';
 
 interface SocketContextType {
     socket: Socket | null;
@@ -19,12 +20,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const user = state.user;
 
     useEffect(() => {
-        // Initialize Socket
-        // const newSocket = io('http://localhost:5000', { // Local
-        const newSocket = io('https://freshmart-project.onrender.com', { // Production
+        // Initialize Socket with production-ready config
+        const newSocket = io(SOCKET_URL, {
             withCredentials: true,
             autoConnect: true,
             reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            transports: ['websocket', 'polling'], // WebSocket first, fallback to polling
         });
 
         newSocket.on('connect', () => {

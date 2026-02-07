@@ -1,0 +1,29 @@
+services:
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./mongo-data:/data/db:Z # The :Z is crucial for Fedora/SELinux
+
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/freshmart
+      - JWT_SECRET=dev-secret-change-in-production-min-32-characters
+      - NODE_ENV=development
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+    depends_on:
+      - mongodb
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:5000
+      - VITE_SOCKET_URL=http://localhost:5000
+    depends_on:   
+      - backend

@@ -251,36 +251,56 @@ const Orders = () => {
   );
 };
 
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+
+// Loading screen while auth is being restored
+const AuthLoadingWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  return <>{children}</>;
+};
 
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <StoreProvider>
-        <SocketProvider>
-          <ToastNotification />
-          <SpecialCouponPopup />
-          <Router>
-            <div className="min-h-screen flex flex-col">
-              <Navbar />
-              <main className="flex-grow bg-gray-50">
-                <Routes>
-                  <Route path="/" element={<Login />} />
-                  <Route path="/home" element={<Home />} />
-                  <Route path="/cart" element={<Cart />} />
-                  <Route path="/checkout" element={<Checkout />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/admin" element={<Admin />} />
-                  <Route path="/orders" element={<Orders />} />
-                  <Route path="/backend-guide" element={<BackendGuide />} />
-                  <Route path="*" element={<Navigate to="/" />} />
-                </Routes>
-              </main>
-              {/* Footer removed as requested */}
-            </div>
-          </Router>
-        </SocketProvider>
-      </StoreProvider>
+      <AuthLoadingWrapper>
+        <StoreProvider>
+          <SocketProvider>
+            <ToastNotification />
+            <SpecialCouponPopup />
+            <Router>
+              <div className="min-h-screen flex flex-col">
+                <Navbar />
+                <main className="flex-grow bg-gray-50">
+                  <Routes>
+                    <Route path="/" element={<Login />} />
+                    <Route path="/home" element={<Home />} />
+                    <Route path="/cart" element={<Cart />} />
+                    <Route path="/checkout" element={<Checkout />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/admin" element={<Admin />} />
+                    <Route path="/orders" element={<Orders />} />
+                    <Route path="/backend-guide" element={<BackendGuide />} />
+                    <Route path="*" element={<Navigate to="/" />} />
+                  </Routes>
+                </main>
+                {/* Footer removed as requested */}
+              </div>
+            </Router>
+          </SocketProvider>
+        </StoreProvider>
+      </AuthLoadingWrapper>
     </AuthProvider>
   );
 };

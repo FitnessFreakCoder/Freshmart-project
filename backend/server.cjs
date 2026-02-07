@@ -33,15 +33,31 @@ const {
   codeSchema
 } = require('./validation.cjs');
 
+// CORS Origins - configurable via environment variable
+const CORS_ORIGINS = process.env.CORS_ORIGINS 
+  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'];
+
+// Cookie settings for cross-origin deployment (Vercel frontend -> Render backend)
+const getCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' required for cross-origin
+  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+});
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'https://freshmart-project.vercel.app'],
+    origin: CORS_ORIGINS,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token']
-  }
+  },
+  transports: ['websocket', 'polling'], // WebSocket first, fallback to polling
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // --- SOCKET.IO CONNECTION HANDLER ---
@@ -60,7 +76,7 @@ io.on('connection', (socket) => {
 
 // 1. CORS (Must be first to handle pre-flight requests)
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'https://freshmart-project.vercel.app'],
+  origin: CORS_ORIGINS,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token']
@@ -247,12 +263,7 @@ app.post('/api/auth/register', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', refreshToken, getCookieOptions());
 
     res.status(201).json({
       accessToken,
@@ -292,12 +303,7 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', refreshToken, getCookieOptions());
 
     res.json({
       accessToken,
@@ -370,12 +376,7 @@ app.post('/api/google-login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', refreshToken, getCookieOptions());
 
     res.json({
       accessToken,
@@ -436,12 +437,7 @@ app.post('/api/auth/google', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', refreshToken, getCookieOptions());
 
     res.json({
       accessToken,
@@ -502,7 +498,7 @@ app.post('/api/logout', (req, res) => {
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax'
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   });
   res.json({ message: 'Logged out successfully' });
 });
@@ -674,10 +670,28 @@ app.delete('/api/admin/categories/:category', authenticateToken, authorizeRoles(
 // ORDER ROUTES
 // =====================
 
+// Helper to check if MongoDB supports transactions (replica set only)
+const supportsTransactions = async () => {
+  try {
+    const adminDb = mongoose.connection.db.admin();
+    const result = await adminDb.command({ replSetGetStatus: 1 });
+    return !!result.ok;
+  } catch (err) {
+    // If replSetGetStatus fails, it's a standalone instance
+    return false;
+  }
+};
+
 // PLACE ORDER - NO CSRF VALIDATION
 app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const useTransaction = await supportsTransactions();
+  let session = null;
+  
+  if (useTransaction) {
+    session = await mongoose.startSession();
+    session.startTransaction();
+  }
+  
   try {
     const { items, discount, couponCodes, deliveryCharge, location, mobileNumber, username } = req.body;
     const orderId = `ORD-${Date.now()}`;
@@ -688,10 +702,11 @@ app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), asyn
     const calculatedFinal = calculatedTotal - validDiscount + validDelivery;
 
     if (couponCodes && couponCodes.length > 0) {
+      const couponOptions = session ? { session } : {};
       await Coupon.updateMany(
         { code: { $in: couponCodes } },
         { $addToSet: { usedBy: req.user.id } },
-        { session }
+        couponOptions
       );
     }
 
@@ -714,18 +729,23 @@ app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), asyn
       status: 'Pending'
     });
 
-    await order.save({ session });
+    const saveOptions = session ? { session } : {};
+    await order.save(saveOptions);
 
     for (const item of items) {
-      await Product.findByIdAndUpdate(item.id, { $inc: { stock: -item.quantity } }, { session });
+      const updateOptions = session ? { session } : {};
+      await Product.findByIdAndUpdate(item.id, { $inc: { stock: -item.quantity } }, updateOptions);
     }
 
     if (mobileNumber) {
       const rawMobile = mobileNumber.replace('+977-', '');
-      await User.findByIdAndUpdate(req.user.id, { mobileNumber: rawMobile }, { session });
+      const userUpdateOptions = session ? { session } : {};
+      await User.findByIdAndUpdate(req.user.id, { mobileNumber: rawMobile }, userUpdateOptions);
     }
 
-    await session.commitTransaction();
+    if (session) {
+      await session.commitTransaction();
+    }
 
     // --- SOCKET.IO EMIT ---
     io.to('admin_room').to('staff_room').emit('newOrderNotification', {
@@ -757,11 +777,15 @@ app.post('/api/orders', authenticateToken, validate({ body: orderSchema }), asyn
       createdAt: order.createdAt
     });
   } catch (err) {
-    await session.abortTransaction();
+    if (session) {
+      await session.abortTransaction();
+    }
     console.error('Order creation error:', err);
     res.status(500).json({ error: err.message });
   } finally {
-    session.endSession();
+    if (session) {
+      session.endSession();
+    }
   }
 });
 

@@ -4,6 +4,7 @@ import { Product } from '../types';
 import { Plus, Minus, Clock, Tag } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useNavigate } from 'react-router-dom';
+import { getImageUrl } from '../config';
 
 interface Props {
   product: Product;
@@ -52,12 +53,9 @@ const ProductCard: React.FC<Props> = ({ product }) => {
     : 0;
 
   // Helper to resolve image URL (handle relative /uploads/ paths from backend)
-  const getImageUrl = (url: string) => {
+  const resolveImageUrl = (url: string) => {
     if (!url) return 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
-    if (url.startsWith('/uploads/')) {
-      return `https://freshmart-project.onrender.com${url}`;
-    }
-    return url;
+    return getImageUrl(url);
   };
 
   return (
@@ -65,7 +63,7 @@ const ProductCard: React.FC<Props> = ({ product }) => {
       {/* Image Area */}
       <div className="h-44 relative bg-white p-4 flex justify-center items-center overflow-hidden border-b border-gray-50">
         <img
-          src={getImageUrl(product.imageUrl)}
+          src={resolveImageUrl(product.imageUrl)}
           alt={product.name}
           className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
         />

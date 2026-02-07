@@ -10,6 +10,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { setApiAccessToken } from '../services/api';
+import { API_BASE } from '../config';
 
 interface AuthContextType {
     accessToken: string | null;
@@ -24,8 +25,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
-
-const API_BASE = 'https://freshmart-project.onrender.com/api';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [accessToken, setAccessToken] = useState<string | null>(null);
