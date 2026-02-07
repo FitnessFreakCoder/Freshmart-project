@@ -171,7 +171,7 @@ const Admin: React.FC = () => {
     const getImageUrl = (url: string) => {
         if (!url) return 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
         if (url.startsWith('/uploads/')) {
-            return `http://localhost:5000${url}`;
+            return `https://freshmart-project.onrender.com${url}`;
         }
         return url;
     };
